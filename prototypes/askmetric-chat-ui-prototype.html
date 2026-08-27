@@ -1,0 +1,917 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE
+  Question: Which chat-first interaction layout best explains Conversation, Agent Run,
+  Analysis Task, approval, and report generation?
+  Three variants on one page, switchable with ?variant=A|B|C.
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AskMetric Chat-first 交互原型</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f5;
+      --surface: #fbfcfb;
+      --surface-2: #eef1ef;
+      --surface-3: #e5e9e6;
+      --text: #1e2421;
+      --muted: #68716c;
+      --faint: #909892;
+      --line: #d7ddd9;
+      --line-strong: #bdc7c0;
+      --accent: #176b50;
+      --accent-strong: #0f543e;
+      --accent-soft: #dcece5;
+      --blue: #356c9a;
+      --blue-soft: #e2edf5;
+      --amber: #9b6818;
+      --amber-soft: #f5ead4;
+      --red: #a64242;
+      --red-soft: #f7e3e1;
+      --shadow: 0 10px 30px rgb(32 46 38 / 10%);
+      --radius: 6px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #151917;
+      --surface: #1b201d;
+      --surface-2: #232925;
+      --surface-3: #2b322e;
+      --text: #edf2ef;
+      --muted: #a7b0aa;
+      --faint: #778179;
+      --line: #343c37;
+      --line-strong: #4a554e;
+      --accent: #68b897;
+      --accent-strong: #8cccae;
+      --accent-soft: #203c30;
+      --blue: #7fb2dd;
+      --blue-soft: #223646;
+      --amber: #e0ae58;
+      --amber-soft: #44361f;
+      --red: #e18b86;
+      --red-soft: #452926;
+      --shadow: 0 12px 34px rgb(0 0 0 / 28%);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      min-width: 320px;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+    button, input, textarea { font: inherit; letter-spacing: 0; }
+    button { color: inherit; }
+    button:focus-visible, textarea:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    button:disabled { cursor: not-allowed; opacity: .48; }
+    .icon { width: 17px; height: 17px; stroke-width: 1.8; flex: 0 0 auto; }
+    .icon-sm { width: 14px; height: 14px; }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    .faint { color: var(--faint); }
+    .strong { font-weight: 650; }
+    .eyebrow { color: var(--muted); font-size: 12px; font-weight: 650; }
+    .brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 720; font-size: 15px; }
+    .brand-mark {
+      display: grid; place-items: center; width: 25px; height: 25px;
+      border-radius: 5px; background: var(--text); color: var(--surface);
+      font-family: var(--mono); font-size: 12px; font-weight: 800;
+    }
+    .icon-btn {
+      display: inline-grid; place-items: center; width: 34px; height: 34px;
+      border: 1px solid transparent; border-radius: 5px; background: transparent;
+      cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--surface-2); border-color: var(--line); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      min-height: 34px; padding: 7px 12px; border: 1px solid var(--line-strong);
+      border-radius: 5px; background: var(--surface); cursor: pointer; white-space: nowrap;
+      font-weight: 620; font-size: 13px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+    .btn-primary { border-color: var(--accent); background: var(--accent); color: #f7fbf9; }
+    .btn-primary:hover { background: var(--accent-strong); color: #f7fbf9; }
+    .btn-danger { border-color: var(--red); color: var(--red); background: var(--red-soft); }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 28px;
+      padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--surface); color: var(--muted); cursor: pointer; font-size: 12px;
+    }
+    .chip:hover { color: var(--accent-strong); border-color: var(--accent); }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px; min-height: 22px;
+      padding: 3px 7px; border-radius: 4px; background: var(--surface-2);
+      color: var(--muted); font-size: 11px; font-weight: 650;
+    }
+    .badge.green { background: var(--accent-soft); color: var(--accent-strong); }
+    .badge.amber { background: var(--amber-soft); color: var(--amber); }
+    .badge.red { background: var(--red-soft); color: var(--red); }
+    .badge.blue { background: var(--blue-soft); color: var(--blue); }
+    .semantic-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .panel { min-width: 0; min-height: 0; background: var(--surface); border-color: var(--line); }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      min-height: 50px; padding: 0 16px; border-bottom: 1px solid var(--line);
+    }
+    .scroll { min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+    .rule { height: 1px; background: var(--line); }
+
+    #app { min-height: 100dvh; }
+    .app-frame { min-height: 100dvh; padding-bottom: 68px; }
+
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      height: 54px; padding: 0 16px; background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .workspace-select {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 32px;
+      padding: 0 9px; border: 1px solid var(--line); border-radius: 5px;
+      background: var(--surface-2); font-size: 12px; font-weight: 620;
+    }
+    .avatar {
+      display: grid; place-items: center; width: 28px; height: 28px;
+      border-radius: 50%; background: #d7b98d; color: #3e2d1d; font-weight: 750; font-size: 11px;
+    }
+
+    .composer {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end;
+      padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface);
+    }
+    .composer textarea {
+      width: 100%; min-height: 42px; max-height: 110px; resize: vertical;
+      padding: 10px 11px; border: 1px solid var(--line-strong); border-radius: 6px;
+      background: var(--bg); color: var(--text); line-height: 1.45;
+    }
+    .composer textarea::placeholder { color: var(--faint); }
+    .suggestions { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 14px 0; }
+    .message-list { display: flex; flex-direction: column; gap: 16px; padding: 18px max(18px, calc((100% - 760px) / 2)); }
+    .message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .message.user { grid-template-columns: minmax(0, 1fr) 30px; }
+    .message.user .message-body { order: -1; justify-self: end; background: var(--surface-2); }
+    .message-avatar {
+      display: grid; place-items: center; width: 30px; height: 30px; border-radius: 5px;
+      background: var(--accent-soft); color: var(--accent-strong); font-weight: 750; font-size: 11px;
+    }
+    .message.user .message-avatar { border-radius: 50%; background: #d7b98d; color: #3e2d1d; }
+    .message-body {
+      width: fit-content; max-width: min(680px, 92%); padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+      line-height: 1.62; white-space: pre-wrap;
+    }
+    .message-meta { margin-top: 6px; color: var(--faint); font-size: 11px; }
+    .inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+    .task-stage { display: grid; gap: 8px; }
+    .stage-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; min-height: 30px; }
+    .stage-icon {
+      display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+      border: 1px solid var(--line-strong); color: var(--faint); font-size: 10px; font-weight: 750;
+    }
+    .stage-row.done .stage-icon { background: var(--accent); border-color: var(--accent); color: #f7fbf9; }
+    .stage-row.active .stage-icon { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+    .stage-row.pending { color: var(--faint); }
+    .stage-line { width: 1px; height: 8px; margin: -4px 0 -4px 10px; background: var(--line); }
+
+    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .metric { padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+    .metric-value { margin-top: 5px; font-family: var(--mono); font-size: 18px; font-weight: 730; }
+    .metric-delta { margin-top: 3px; color: var(--red); font-family: var(--mono); font-size: 11px; }
+    .chart-wrap { min-height: 132px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+    canvas[data-chart] { display: block; width: 100%; height: 105px; }
+
+    .conversation-item {
+      width: 100%; padding: 10px; border: 0; border-radius: 5px; background: transparent;
+      text-align: left; cursor: pointer; color: inherit;
+    }
+    .conversation-item:hover, .conversation-item.active { background: var(--surface-2); }
+    .conversation-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 620; }
+    .conversation-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--faint); font-size: 11px; }
+
+    /* Variant A: classic collaboration cockpit */
+    .layout-a { display: grid; grid-template-rows: 54px minmax(0, 1fr); height: calc(100dvh - 68px); }
+    .a-grid { display: grid; grid-template-columns: 236px minmax(420px, 1fr) 320px; min-height: 0; }
+    .a-sidebar { border-right: 1px solid var(--line); }
+    .a-sidebar-nav { padding: 10px; }
+    .nav-link {
+      display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px;
+      padding: 7px 9px; border: 0; border-radius: 5px; background: transparent;
+      color: var(--muted); cursor: pointer; text-align: left;
+    }
+    .nav-link.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 650; }
+    .a-conversations { padding: 5px 10px 12px; }
+    .a-chat { display: grid; grid-template-rows: 50px minmax(0, 1fr) auto auto; border-right: 1px solid var(--line); }
+    .a-context { padding: 0; }
+    .context-section { padding: 14px; border-bottom: 1px solid var(--line); }
+
+    /* Variant B: report-forward analysis canvas */
+    .layout-b { height: calc(100dvh - 68px); overflow: auto; background: var(--bg); }
+    .b-wrap { width: min(1240px, calc(100% - 32px)); margin: 0 auto; padding: 18px 0 28px; }
+    .b-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+    .b-tabs { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 2px; }
+    .b-tab {
+      min-width: 150px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 5px;
+      background: var(--surface); color: var(--muted); text-align: left; cursor: pointer;
+    }
+    .b-tab.active { border-color: var(--accent); color: var(--text); }
+    .b-stagebar {
+      display: grid; grid-template-columns: repeat(5, 1fr); margin: 14px 0;
+      border: 1px solid var(--line); border-radius: 6px; background: var(--surface); overflow: hidden;
+    }
+    .b-stage {
+      display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 7px 10px;
+      border-right: 1px solid var(--line); color: var(--faint); font-size: 12px;
+    }
+    .b-stage:last-child { border-right: 0; }
+    .b-stage.done { color: var(--accent-strong); background: var(--accent-soft); }
+    .b-stage.active { color: var(--amber); background: var(--amber-soft); }
+    .b-canvas { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(340px, .7fr); min-height: 590px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+    .b-conversation { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 0; border-right: 1px solid var(--line); }
+    .b-evidence { min-height: 0; overflow: auto; }
+    .evidence-head { padding: 18px; border-bottom: 1px solid var(--line); }
+    .evidence-body { padding: 16px; }
+    .finding { margin-top: 12px; padding: 12px; border-left: 3px solid var(--red); background: var(--red-soft); line-height: 1.55; }
+    .source-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .source-row:last-child { border-bottom: 0; }
+
+    /* Variant C: event timeline and decision dock */
+    .layout-c { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: calc(100dvh - 68px); }
+    .c-rail { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 0; border-right: 1px solid var(--line); background: var(--surface); }
+    .c-rail .brand-mark { margin-bottom: 10px; }
+    .c-main { display: grid; grid-template-rows: 54px minmax(0, 1fr); min-width: 0; }
+    .c-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .c-body { display: grid; grid-template-columns: minmax(460px, 1fr) 400px; min-height: 0; }
+    .timeline { min-height: 0; overflow: auto; padding: 22px max(20px, calc((100% - 760px) / 2)); }
+    .timeline-item { display: grid; grid-template-columns: 84px 24px minmax(0, 1fr); gap: 10px; position: relative; padding-bottom: 18px; }
+    .timeline-item::after { content: ""; position: absolute; left: 105px; top: 26px; bottom: 0; width: 1px; background: var(--line); }
+    .timeline-item:last-child::after { display: none; }
+    .timeline-time { padding-top: 4px; color: var(--faint); font-family: var(--mono); font-size: 11px; text-align: right; }
+    .timeline-node { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--muted); z-index: 1; }
+    .timeline-content { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); line-height: 1.55; }
+    .timeline-content.user-event { background: var(--surface-2); }
+    .decision-dock { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+    .decision-title { padding: 16px; border-bottom: 1px solid var(--line); }
+    .decision-body { min-height: 0; overflow: auto; padding: 16px; }
+    .decision-block { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .decision-block:last-child { border-bottom: 0; }
+
+    .approval-box { padding: 12px; border: 1px solid #d4ad68; border-radius: 6px; background: var(--amber-soft); }
+    .approval-title { display: flex; align-items: center; gap: 7px; color: var(--amber); font-weight: 720; }
+    .approval-args { margin: 9px 0; padding: 9px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 72%, transparent); font-family: var(--mono); font-size: 11px; line-height: 1.55; }
+    .approval-actions { display: flex; gap: 8px; }
+
+    .empty-task { padding: 12px; border: 1px dashed var(--line-strong); border-radius: 5px; color: var(--muted); line-height: 1.55; }
+    .report-teaser { padding: 13px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); }
+    .report-teaser h3 { margin: 0 0 6px; font-size: 14px; }
+    .report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+    .prototype-switcher {
+      position: fixed; left: 50%; bottom: 14px; z-index: 40; transform: translateX(-50%);
+      display: grid; grid-template-columns: 38px minmax(190px, auto) 38px; align-items: center;
+      border: 1px solid #2e3732; border-radius: 7px; background: #202622; color: #f3f6f4;
+      box-shadow: 0 12px 32px rgb(0 0 0 / 24%); overflow: hidden;
+    }
+    .prototype-switcher button { height: 38px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+    .prototype-switcher button:hover { background: #343c37; }
+    .prototype-label { padding: 0 13px; text-align: center; font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .prototype-label small { margin-left: 7px; color: #aeb8b1; font-size: 10px; letter-spacing: .04em; }
+
+    .state-drawer {
+      position: fixed; inset: 54px 0 0 auto; z-index: 35; width: min(430px, 92vw);
+      background: #151a17; color: #dfe8e2; border-left: 1px solid #38413b; box-shadow: var(--shadow);
+      display: grid; grid-template-rows: 48px minmax(0, 1fr); transform: translateX(102%);
+      visibility: hidden; pointer-events: none; transition: transform .22s ease, visibility 0s linear .22s;
+    }
+    .state-drawer.open { visibility: visible; pointer-events: auto; transform: translateX(0); transition-delay: 0s; }
+    .state-head { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #343c37; }
+    .state-drawer pre { margin: 0; padding: 14px; overflow: auto; font: 11px/1.6 var(--mono); white-space: pre-wrap; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+      padding: 24px; background: rgb(19 24 21 / 62%);
+    }
+    .report-modal {
+      width: min(900px, 100%); max-height: 90dvh; overflow: auto;
+      border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow);
+    }
+    .report-modal-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .report-doc { padding: 34px 42px 48px; }
+    .report-doc h1 { margin: 0; font-size: 25px; line-height: 1.25; }
+    .report-doc h2 { margin: 28px 0 12px; font-size: 16px; }
+    .report-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .report-lead { margin: 24px 0; padding: 16px; border-left: 4px solid var(--red); background: var(--red-soft); font-size: 16px; line-height: 1.65; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .report-table th, .report-table td { padding: 9px; border-bottom: 1px solid var(--line); text-align: left; }
+    .report-table th { color: var(--muted); font-weight: 650; }
+
+    .toast {
+      position: fixed; right: 16px; bottom: 68px; z-index: 60; padding: 10px 13px;
+      border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface);
+      box-shadow: var(--shadow); animation: toast-in .2s ease both;
+    }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+    @media (max-width: 1040px) {
+      .a-grid { grid-template-columns: 210px minmax(0, 1fr); }
+      .a-context { display: none; }
+      .a-chat { border-right: 0; }
+      .b-canvas { grid-template-columns: minmax(0, 1fr); }
+      .b-evidence { border-top: 1px solid var(--line); }
+      .b-conversation { min-height: 570px; border-right: 0; }
+      .c-body { grid-template-columns: minmax(0, 1fr) 350px; }
+    }
+    @media (max-width: 760px) {
+      body { overflow: auto; }
+      .app-frame, .layout-a, .layout-b, .layout-c { min-height: calc(100dvh - 68px); height: auto; }
+      .topbar { padding: 0 10px; }
+      .workspace-select span, .topbar .badge { display: none; }
+      .a-grid { display: block; }
+      .a-sidebar { display: none; }
+      .a-chat { min-height: calc(100dvh - 122px); }
+      .message-list { padding: 14px 12px; }
+      .message-body { max-width: 96%; }
+      .b-wrap { width: 100%; padding: 10px; }
+      .b-header { align-items: flex-start; }
+      .b-tabs { max-width: 72vw; }
+      .b-stagebar { grid-template-columns: 1fr; }
+      .b-stage { border-right: 0; border-bottom: 1px solid var(--line); }
+      .b-stage:last-child { border-bottom: 0; }
+      .b-canvas { display: block; min-height: 0; }
+      .b-conversation { min-height: 620px; }
+      .layout-c { display: block; }
+      .c-rail { flex-direction: row; justify-content: center; height: 52px; padding: 5px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .c-rail .brand-mark { margin: 0 8px 0 0; }
+      .c-main { display: block; }
+      .c-head { height: 52px; padding: 0 12px; }
+      .c-body { display: block; }
+      .timeline { max-height: 48dvh; padding: 16px 10px; }
+      .timeline-item { grid-template-columns: 50px 20px minmax(0, 1fr); gap: 7px; }
+      .timeline-item::after { left: 67px; }
+      .decision-dock { min-height: 520px; border-left: 0; border-top: 1px solid var(--line); }
+      .report-doc { padding: 24px 18px 36px; }
+      .modal-backdrop { padding: 8px; }
+      .prototype-switcher { bottom: 9px; grid-template-columns: 36px minmax(160px, auto) 36px; }
+      .prototype-label { padding-inline: 8px; }
+      .prototype-label small { margin-left: 5px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const variants = [
+      { key: 'A', name: '三栏协作台' },
+      { key: 'B', name: '报告优先画布' },
+      { key: 'C', name: '任务时间线' }
+    ];
+
+    const initialState = () => ({
+      variant: new URLSearchParams(location.search).get('variant') || 'A',
+      theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+      inspectorOpen: false,
+      reportOpen: false,
+      toast: '',
+      conversationId: 'conv_mrr_0827',
+      activeTask: null,
+      stage: 'idle',
+      approval: null,
+      reportReady: false,
+      messages: [
+        { role: 'assistant', text: '下午好。你可以直接询问经营指标，也可以先了解 AskMetric 如何工作。', time: '14:02' }
+      ],
+      runs: [],
+      events: [
+        { time: '14:02:04', type: 'system', label: 'Conversation 已创建', detail: 'conv_mrr_0827' }
+      ],
+      metrics: { mrr: '¥8.42M', delta: '-7.8%', churn: '¥612K', affected: '184' },
+      stageIndex: -1
+    });
+
+    let state = initialState();
+    let timers = [];
+
+    const escapeHtml = (value = '') => String(value)
+      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    const icon = (name, cls = '') => `<i data-lucide="${name}" class="icon ${cls}"></i>`;
+    const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const shortNow = () => now().slice(0, 5);
+    const activeVariant = () => variants.find(v => v.key === state.variant) || variants[0];
+    const isBusy = () => ['planning', 'retrieving', 'querying', 'synthesizing'].includes(state.stage);
+
+    function addMessage(role, text, extra = {}) {
+      state.messages.push({ role, text, time: shortNow(), ...extra });
+    }
+
+    function addEvent(type, label, detail = '') {
+      state.events.push({ time: now(), type, label, detail });
+    }
+
+    function currentStatusLabel() {
+      const labels = {
+        idle: '仅对话', clarification: '等待指标澄清', planning: '制定分析计划',
+        retrieving: '检索指标与知识', querying: '执行受治理查询',
+        synthesizing: '验证证据', approval: '等待人工审批',
+        completed: '分析已完成', cancelled: '已取消'
+      };
+      return labels[state.stage] || state.stage;
+    }
+
+    function topbar() {
+      return `<header class="topbar">
+        <div class="topbar-left">
+          <span class="brand"><span class="brand-mark">AM</span>AskMetric</span>
+          <span class="workspace-select">${icon('building-2', 'icon-sm')}<span>星云科技 Demo Workspace</span>${icon('chevron-down', 'icon-sm')}</span>
+        </div>
+        <div class="topbar-right">
+          <span class="badge green"><span class="semantic-dot"></span>数据截至 08-27</span>
+          <button class="icon-btn" data-action="toggle-state" title="查看完整状态" aria-label="查看完整状态">${icon('braces')}</button>
+          <button class="icon-btn" data-action="toggle-theme" title="切换主题" aria-label="切换主题">${icon(state.theme === 'dark' ? 'sun' : 'moon')}</button>
+          <span class="avatar" title="林乔">LQ</span>
+        </div>
+      </header>`;
+    }
+
+    function conversationItems() {
+      return `<button class="conversation-item active">
+          <div class="conversation-title">本月 MRR 下降原因</div>
+          <div class="conversation-sub"><span>${currentStatusLabel()}</span><span>刚刚</span></div>
+        </button>
+        <button class="conversation-item">
+          <div class="conversation-title">续费风险客户分析</div>
+          <div class="conversation-sub"><span>报告已生成</span><span>昨天</span></div>
+        </button>
+        <button class="conversation-item">
+          <div class="conversation-title">Q3 销售漏斗复盘</div>
+          <div class="conversation-sub"><span>分析已完成</span><span>周一</span></div>
+        </button>`;
+    }
+
+    function suggestions() {
+      if (state.activeTask || state.reportReady) return '';
+      return `<div class="suggestions">
+        <button class="chip" data-action="preset" data-value="你好，你是谁">${icon('message-circle', 'icon-sm')}你好，你是谁</button>
+        <button class="chip" data-action="preset" data-value="为什么本月 MRR 下降？">${icon('search', 'icon-sm')}为什么本月 MRR 下降？</button>
+      </div>`;
+    }
+
+    function inlineTaskAction(message) {
+      if (!message.action) return '';
+      if (message.action === 'clarify') return `<div class="inline-actions">
+        <button class="btn btn-primary" data-action="clarify">使用标准 MRR 口径</button>
+        <button class="btn" data-action="custom-clarify">调整口径</button>
+      </div>`;
+      if (message.action === 'approval' && state.approval) return approvalBox();
+      if (message.action === 'report' && state.reportReady) return reportTeaser();
+      return '';
+    }
+
+    function messages() {
+      return state.messages.map((m) => `<article class="message ${m.role}">
+        <div class="message-avatar">${m.role === 'user' ? 'LQ' : 'AM'}</div>
+        <div class="message-body">${escapeHtml(m.text)}${inlineTaskAction(m)}
+          <div class="message-meta">${m.role === 'user' ? '你' : 'AskMetric'} ${m.time}</div>
+        </div>
+      </article>`).join('');
+    }
+
+    function composer(compact = false) {
+      const placeholder = state.stage === 'clarification' ? '选择上方口径，或输入你的定义' : isBusy() ? '分析运行中，可点击停止' : '询问业务指标或继续当前分析';
+      return `${suggestions()}<form class="composer" data-form="composer">
+        <textarea name="message" rows="${compact ? 1 : 2}" placeholder="${placeholder}" ${isBusy() ? 'disabled' : ''}></textarea>
+        ${isBusy()
+          ? `<button type="button" class="btn btn-danger" data-action="stop">${icon('square', 'icon-sm')}停止</button>`
+          : `<button type="submit" class="btn btn-primary">${icon('arrow-up', 'icon-sm')}发送</button>`}
+      </form>`;
+    }
+
+    const stages = [
+      ['理解问题', 'planning'], ['检索口径', 'retrieving'], ['执行查询', 'querying'],
+      ['验证证据', 'synthesizing'], ['生成报告', 'completed']
+    ];
+
+    function stageList() {
+      return `<div class="task-stage">${stages.map((s, i) => {
+        const cls = i < state.stageIndex ? 'done' : i === state.stageIndex ? 'active' : 'pending';
+        return `${i ? '<div class="stage-line"></div>' : ''}<div class="stage-row ${cls}">
+          <span class="stage-icon">${i < state.stageIndex ? icon('check', 'icon-sm') : i + 1}</span>
+          <span>${s[0]}</span><span class="mono faint">${cls === 'active' ? 'RUN' : cls === 'done' ? 'DONE' : ''}</span>
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    function taskSummary() {
+      if (!state.activeTask) return `<div class="empty-task">当前 Conversation 只有普通对话，没有 Analysis Task。发送分析问题后才会创建任务。</div>`;
+      return `<div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px">
+          <span class="strong">MRR 下降原因分析</span>
+          <span class="badge ${state.stage === 'approval' ? 'amber' : state.stage === 'completed' ? 'green' : state.stage === 'cancelled' ? 'red' : 'blue'}">${currentStatusLabel()}</span>
+        </div>
+        <div class="mono faint" style="font-size:11px;margin-bottom:13px">task_0827_mrr · ${state.runs.length} runs</div>
+        ${stageList()}
+      </div>`;
+    }
+
+    function approvalBox() {
+      if (!state.approval) return '';
+      return `<section class="approval-box">
+        <div class="approval-title">${icon('shield-check')}等待审批</div>
+        <div style="margin-top:7px;line-height:1.5">创建一个后续任务，跟进 SMB 客户流失上升。</div>
+        <div class="approval-args">tool: create_follow_up_task<br>owner: Customer Success<br>due: 2026-09-03<br>idempotency: act_7c82</div>
+        <div class="approval-actions">
+          <button class="btn btn-primary" data-action="approve">批准并执行</button>
+          <button class="btn" data-action="reject">拒绝</button>
+        </div>
+      </section>`;
+    }
+
+    function reportTeaser() {
+      return `<section class="report-teaser">
+        <h3>MRR 下降原因分析报告</h3>
+        <div class="muted">结论、证据、指标版本和查询附录已固定为不可变快照。</div>
+        <div class="report-actions">
+          <button class="btn btn-primary" data-action="open-report">${icon('file-text', 'icon-sm')}查看 HTML 报告</button>
+          <button class="btn" data-action="download-report">${icon('download', 'icon-sm')}下载</button>
+        </div>
+      </section>`;
+    }
+
+    function evidencePanel() {
+      return `<div class="metric-grid">
+          <div class="metric"><div class="eyebrow">本月 MRR</div><div class="metric-value">${state.metrics.mrr}</div><div class="metric-delta">${state.metrics.delta} MoM</div></div>
+          <div class="metric"><div class="eyebrow">Churned MRR</div><div class="metric-value">${state.metrics.churn}</div><div class="metric-delta">+18.4% MoM</div></div>
+        </div>
+        <div class="chart-wrap" style="margin-top:10px"><canvas data-chart aria-label="MRR 趋势图"></canvas></div>
+        ${state.stageIndex >= 3 || state.reportReady ? `<div class="finding"><strong>主要发现</strong><br>下降的 63% 来自 SMB 年付客户流失，集中在 Starter 套餐。</div>` : ''}`;
+    }
+
+    function renderA() {
+      return `<div class="app-frame layout-a">${topbar()}
+        <div class="a-grid">
+          <aside class="panel a-sidebar scroll">
+            <div class="a-sidebar-nav">
+              <button class="nav-link active">${icon('message-square')}Chat</button>
+              <button class="nav-link">${icon('file-chart-column')}Reports</button>
+              <button class="nav-link">${icon('database')}Data</button>
+              <button class="nav-link">${icon('activity')}Operations</button>
+            </div>
+            <div class="rule"></div>
+            <div class="panel-head" style="border:0;padding:0 10px"><span class="eyebrow">最近对话</span><button class="icon-btn" title="新建对话">${icon('square-pen')}</button></div>
+            <div class="a-conversations">${conversationItems()}</div>
+          </aside>
+          <main class="panel a-chat">
+            <div class="panel-head"><div><div class="strong">本月 MRR 下降原因</div><div class="faint" style="font-size:11px;margin-top:3px">Conversation · ${state.activeTask ? '1 Analysis Task' : 'No task'}</div></div>
+              ${state.reportReady ? `<button class="btn" data-action="open-report">${icon('file-text', 'icon-sm')}报告</button>` : ''}
+            </div>
+            <div class="scroll message-list">${messages()}</div>
+            ${composer()}
+          </main>
+          <aside class="panel a-context scroll">
+            <div class="panel-head"><span class="strong">分析上下文</span><span class="badge">LIVE STATE</span></div>
+            <section class="context-section">${taskSummary()}</section>
+            <section class="context-section"><div class="eyebrow" style="margin-bottom:10px">关键证据</div>${evidencePanel()}</section>
+            ${state.approval ? `<section class="context-section">${approvalBox()}</section>` : ''}
+            ${state.reportReady ? `<section class="context-section">${reportTeaser()}</section>` : ''}
+          </aside>
+        </div>
+      </div>`;
+    }
+
+    function renderB() {
+      const stageClasses = stages.map((_, i) => i < state.stageIndex ? 'done' : i === state.stageIndex ? 'active' : '');
+      return `<div class="app-frame layout-b">${topbar()}
+        <div class="b-wrap">
+          <div class="b-header"><div><div class="strong" style="font-size:17px">分析工作台</div><div class="muted" style="margin-top:4px">对话和证据在同一画布中推进</div></div>
+            <button class="btn" data-action="reset">${icon('rotate-ccw', 'icon-sm')}重置演示</button>
+          </div>
+          <div class="b-tabs">
+            <button class="b-tab active"><div class="strong">本月 MRR 下降原因</div><div class="faint" style="margin-top:4px">${currentStatusLabel()}</div></button>
+            <button class="b-tab"><div class="strong">续费风险客户</div><div class="faint" style="margin-top:4px">报告已生成</div></button>
+            <button class="b-tab"><div class="strong">Q3 销售漏斗</div><div class="faint" style="margin-top:4px">已完成</div></button>
+          </div>
+          <div class="b-stagebar">${stages.map((s, i) => `<div class="b-stage ${stageClasses[i]}">${i < state.stageIndex ? icon('check', 'icon-sm') : icon(['circle-help','book-open','database','badge-check','file-text'][i], 'icon-sm')}<span>${s[0]}</span></div>`).join('')}</div>
+          <section class="b-canvas">
+            <div class="b-conversation">
+              <div class="scroll message-list">${messages()}</div>
+              ${composer(true)}
+            </div>
+            <aside class="b-evidence">
+              <div class="evidence-head"><div class="eyebrow">分析证据</div><div class="strong" style="font-size:17px;margin-top:5px">MRR 经营快照</div></div>
+              <div class="evidence-body">
+                ${evidencePanel()}
+                <h3 style="font-size:13px;margin:18px 0 5px">来源</h3>
+                <div class="source-row"><span>metric_catalog/mrr_v3</span><span class="badge green">已验证</span></div>
+                <div class="source-row"><span>saas_warehouse.fact_mrr</span><span class="badge blue">只读</span></div>
+                <div class="source-row"><span>续费口径说明.pdf</span><span class="badge">RAG</span></div>
+                <div style="margin-top:16px">${state.approval ? approvalBox() : state.reportReady ? reportTeaser() : taskSummary()}</div>
+              </div>
+            </aside>
+          </section>
+        </div>
+      </div>`;
+    }
+
+    function timelineEvents() {
+      const messageEvents = state.messages.map((m, i) => ({
+        time: m.time + ':00', type: m.role, label: m.role === 'user' ? '用户消息' : 'Assistant 消息', detail: m.text, action: m.action
+      }));
+      const all = [...state.events, ...messageEvents].sort((a, b) => a.time.localeCompare(b.time));
+      return all.map((e) => `<article class="timeline-item">
+        <div class="timeline-time">${escapeHtml(e.time)}</div>
+        <div class="timeline-node">${icon(e.type === 'user' ? 'user' : e.type === 'assistant' ? 'message-square' : e.type === 'tool' ? 'wrench' : 'radio', 'icon-sm')}</div>
+        <div class="timeline-content ${e.type === 'user' ? 'user-event' : ''}">
+          <div class="eyebrow">${escapeHtml(e.label)}</div>
+          <div style="margin-top:5px">${escapeHtml(e.detail)}</div>
+          ${e.action === 'clarify' ? `<div class="inline-actions"><button class="btn btn-primary" data-action="clarify">使用标准 MRR 口径</button></div>` : ''}
+        </div>
+      </article>`).join('');
+    }
+
+    function renderC() {
+      return `<div class="app-frame layout-c">
+        <nav class="c-rail">
+          <span class="brand-mark">AM</span>
+          <button class="icon-btn" title="Chat">${icon('message-square')}</button>
+          <button class="icon-btn" title="Reports">${icon('file-chart-column')}</button>
+          <button class="icon-btn" title="Data">${icon('database')}</button>
+          <button class="icon-btn" title="Operations">${icon('activity')}</button>
+          <span style="flex:1"></span>
+          <button class="icon-btn" data-action="toggle-state" title="查看完整状态">${icon('braces')}</button>
+          <button class="icon-btn" data-action="toggle-theme" title="切换主题">${icon(state.theme === 'dark' ? 'sun' : 'moon')}</button>
+        </nav>
+        <div class="c-main">
+          <header class="c-head"><div><span class="strong">本月 MRR 下降原因</span><span class="badge ${state.activeTask ? 'blue' : ''}" style="margin-left:9px">${state.activeTask ? 'TASK ACTIVE' : 'CHAT ONLY'}</span></div>
+            <div style="display:flex;align-items:center;gap:9px"><span class="workspace-select">${icon('building-2', 'icon-sm')}Demo Workspace</span><span class="avatar">LQ</span></div>
+          </header>
+          <div class="c-body">
+            <main class="timeline">${timelineEvents()}</main>
+            <aside class="decision-dock">
+              <div class="decision-title"><div class="eyebrow">当前决策</div><div class="strong" style="margin-top:5px">${currentStatusLabel()}</div></div>
+              <div class="decision-body">
+                <section class="decision-block">${taskSummary()}</section>
+                <section class="decision-block"><div class="eyebrow" style="margin-bottom:9px">事实快照</div>${evidencePanel()}</section>
+                ${state.approval ? `<section class="decision-block">${approvalBox()}</section>` : ''}
+                ${state.reportReady ? `<section class="decision-block">${reportTeaser()}</section>` : ''}
+              </div>
+              ${composer(true)}
+            </aside>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function switcher() {
+      const variant = activeVariant();
+      return `<div class="prototype-switcher" aria-label="原型方案切换器">
+        <button data-action="variant-prev" title="上一个方案" aria-label="上一个方案">${icon('arrow-left')}</button>
+        <div class="prototype-label">${variant.key} · ${variant.name}<small>PROTOTYPE</small></div>
+        <button data-action="variant-next" title="下一个方案" aria-label="下一个方案">${icon('arrow-right')}</button>
+      </div>`;
+    }
+
+    function stateDrawer() {
+      const snapshot = {
+        conversationId: state.conversationId,
+        messageCount: state.messages.length,
+        activeTask: state.activeTask,
+        stage: state.stage,
+        approval: state.approval,
+        reportReady: state.reportReady,
+        agentRuns: state.runs,
+        recentEvents: state.events.slice(-8)
+      };
+      return `<aside class="state-drawer ${state.inspectorOpen ? 'open' : ''}">
+        <div class="state-head"><span class="strong">完整交互状态</span><button class="icon-btn" data-action="toggle-state" aria-label="关闭">${icon('x')}</button></div>
+        <pre>${escapeHtml(JSON.stringify(snapshot, null, 2))}</pre>
+      </aside>`;
+    }
+
+    function reportModal() {
+      if (!state.reportOpen) return '';
+      return `<div class="modal-backdrop" data-action="close-report">
+        <article class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title" onclick="event.stopPropagation()">
+          <header class="report-modal-head"><div><div class="eyebrow">不可变 HTML 快照</div><div class="strong" id="report-title">MRR 下降原因分析报告</div></div>
+            <div style="display:flex;gap:7px"><button class="btn" data-action="download-report">${icon('download', 'icon-sm')}下载</button><button class="icon-btn" data-action="close-report" aria-label="关闭">${icon('x')}</button></div>
+          </header>
+          <div class="report-doc">
+            <h1>本月 MRR 下降主要来自 SMB 年付客户流失</h1>
+            <div class="report-meta"><span>报告 ID: rpt_0827_7c82</span><span>数据截至: 2026-08-27</span><span>指标版本: MRR v3</span></div>
+            <div class="report-lead">本月 MRR 环比下降 7.8%。其中 63% 的下降来自 SMB 客户，Starter 套餐的年付客户流失是最主要原因。</div>
+            <div class="chart-wrap"><canvas data-chart aria-label="MRR 趋势图"></canvas></div>
+            <h2>证据</h2>
+            <table class="report-table"><thead><tr><th>客户分层</th><th>MRR 变化</th><th>贡献占比</th><th>主要事件</th></tr></thead>
+              <tbody><tr><td>SMB</td><td class="mono">-¥413K</td><td class="mono">63%</td><td>Starter 年付流失</td></tr><tr><td>Mid-market</td><td class="mono">-¥161K</td><td class="mono">25%</td><td>套餐降级</td></tr><tr><td>Enterprise</td><td class="mono">-¥78K</td><td class="mono">12%</td><td>合同时间差</td></tr></tbody>
+            </table>
+            <h2>来源与限制</h2>
+            <p class="muted">来源包括 MRR v3 指标定义、<code>fact_mrr_monthly</code> 证据快照和《续费口径说明》。本结论未验证客户访谈信息，不能直接推断流失动机。</p>
+          </div>
+        </article>
+      </div>`;
+    }
+
+    function render() {
+      document.documentElement.dataset.theme = state.theme;
+      if (!variants.some(v => v.key === state.variant)) state.variant = 'A';
+      const content = state.variant === 'B' ? renderB() : state.variant === 'C' ? renderC() : renderA();
+      document.querySelector('#app').innerHTML = content + switcher() + stateDrawer() + reportModal() + (state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : '');
+      requestAnimationFrame(() => {
+        if (window.lucide) lucide.createIcons();
+        drawCharts();
+        document.querySelectorAll('.message-list, .timeline').forEach(el => el.scrollTop = el.scrollHeight);
+      });
+    }
+
+    function drawCharts() {
+      document.querySelectorAll('canvas[data-chart]').forEach(canvas => {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = devicePixelRatio || 1;
+        canvas.width = Math.max(280, rect.width * ratio);
+        canvas.height = Math.max(105, rect.height * ratio);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(ratio, ratio);
+        const w = canvas.width / ratio, h = canvas.height / ratio;
+        const styles = getComputedStyle(document.documentElement);
+        const line = styles.getPropertyValue('--line-strong').trim();
+        const accent = styles.getPropertyValue('--accent').trim();
+        const red = styles.getPropertyValue('--red').trim();
+        const values = [92, 96, 101, 104, 99, 108, 111, 107, 116, 114, 109, 101];
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = line; ctx.lineWidth = 1;
+        [22, 52, 82].forEach(y => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); });
+        ctx.beginPath();
+        values.forEach((v, i) => {
+          const x = 4 + i * ((w - 8) / (values.length - 1));
+          const y = 92 - (v - 90) * 2.15;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.strokeStyle = state.reportReady ? red : accent; ctx.lineWidth = 2.3; ctx.lineJoin = 'round'; ctx.stroke();
+        const x = w - 4, y = 92 - (values.at(-1) - 90) * 2.15;
+        ctx.fillStyle = red; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+      });
+    }
+
+    function startRun(intent, relation, text) {
+      const run = { id: `run_${String(state.runs.length + 1).padStart(2, '0')}`, intent, taskRelation: relation, status: 'completed', input: text };
+      state.runs.push(run);
+      addEvent('system', `Intent Route: ${intent}`, `${relation} · confidence ${intent === 'analysis' ? '0.94' : '0.99'}`);
+      return run;
+    }
+
+    function sendMessage(text) {
+      const clean = text.trim();
+      if (!clean || isBusy()) return;
+      addMessage('user', clean);
+      const isGreeting = /^(你好|嗨|hello|你是谁)/i.test(clean);
+      const isAnalysis = /(MRR|收入|下降|流失|指标|为什么)/i.test(clean);
+      if (isGreeting && !isAnalysis) {
+        startRun('chat', 'none', clean);
+        addMessage('assistant', '我是 AskMetric，负责把业务问题转化为有证据、可审计的分析。普通对话会记录 Agent Run，但不会创建 Analysis Task。');
+        addEvent('assistant', 'Chat response', 'No Analysis Task created');
+      } else if (isAnalysis) {
+        const relation = state.activeTask ? 'continue' : 'new';
+        startRun('analysis', relation, clean);
+        if (!state.activeTask) {
+          state.activeTask = { id: 'task_0827_mrr', objective: '解释本月 MRR 下降原因', status: 'waiting_for_input' };
+          addEvent('system', 'Analysis Task 已创建', 'task_0827_mrr');
+        }
+        state.stage = 'clarification'; state.stageIndex = 0;
+        addMessage('assistant', '在开始查询前，需要确认 MRR 口径。是否使用语义目录中的 MRR v3：期末订阅金额，不含一次性费用，按月末汇率折算？', { action: 'clarify' });
+      } else {
+        startRun('chat', 'none', clean);
+        addMessage('assistant', '这条消息暂未识别为分析目标，因此不会创建 Task。你可以直接说明要调查的指标、时间范围和业务问题。');
+      }
+      render();
+    }
+
+    function clarify() {
+      if (state.stage !== 'clarification') return;
+      addMessage('user', '使用标准 MRR v3 口径。');
+      const run = startRun('analysis', 'continue', '使用标准 MRR v3 口径');
+      run.status = 'running';
+      state.activeTask.status = 'active';
+      addMessage('assistant', '口径已确认。我会先比较月度变化，再按客户分层、套餐和流失事件下钻，并验证主要贡献因素。');
+      const sequence = [
+        ['planning', 0, '分析计划已确认', 'MRR MoM -> segment -> plan -> churn event'],
+        ['retrieving', 1, '检索指标与知识', 'metric_catalog/mrr_v3 · 3 cited chunks'],
+        ['querying', 2, 'Java Query Gateway', 'SELECT only · 1,284 rows · 842 ms'],
+        ['synthesizing', 3, '证据验证完成', 'SMB churn contribution = 63%'],
+        ['approval', 4, 'Action Proposal 已创建', 'create_follow_up_task · waiting approval']
+      ];
+      clearTimers();
+      sequence.forEach((item, i) => timers.push(setTimeout(() => {
+        state.stage = item[0]; state.stageIndex = item[1];
+        addEvent(i === 2 ? 'tool' : 'system', item[2], item[3]);
+        if (item[0] === 'approval') {
+          run.status = 'completed'; state.activeTask.status = 'waiting_for_approval';
+          state.approval = { id: 'action_7c82', tool: 'create_follow_up_task', status: 'pending' };
+          addMessage('assistant', '分析结论已经形成。我建议创建一个客户成功跟进任务，该操作需要人工审批。', { action: 'approval' });
+        }
+        render();
+      }, 650 + i * 720)));
+      render();
+    }
+
+    function approve(accepted) {
+      if (!state.approval) return;
+      startRun('approval', 'continue', accepted ? '批准操作提案' : '拒绝操作提案');
+      state.approval.status = accepted ? 'executed' : 'rejected';
+      addEvent('tool', accepted ? 'MCP 操作执行成功' : 'Action Proposal 已拒绝', accepted ? 'follow_up_task #FT-184 · idempotent' : 'No side effect');
+      state.approval = null;
+      state.stage = 'completed'; state.stageIndex = 5; state.activeTask.status = 'completed'; state.reportReady = true;
+      addMessage('assistant', accepted
+        ? '后续任务 FT-184 已创建且只执行一次。可审计分析和 HTML 报告已经生成。'
+        : '操作提案已拒绝，没有产生副作用。分析报告仍然可以查看。', { action: 'report' });
+      render();
+    }
+
+    function stopRun() {
+      if (!isBusy()) return;
+      clearTimers(); state.stage = 'cancelled'; state.stageIndex = -1;
+      if (state.activeTask) state.activeTask.status = 'cancelled';
+      const run = state.runs.at(-1); if (run) run.status = 'cancelled';
+      addEvent('system', '取消请求已生效', 'Agent Run and Analysis Task cancelled');
+      addMessage('assistant', '分析已取消。已完成的消息和事件仍然保留，你可以重新发起分析。');
+      render();
+    }
+
+    function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+    function resetDemo() { clearTimers(); const variant = state.variant, theme = state.theme; state = initialState(); state.variant = variant; state.theme = theme; render(); }
+
+    function changeVariant(delta) {
+      const current = variants.findIndex(v => v.key === state.variant);
+      state.variant = variants[(current + delta + variants.length) % variants.length].key;
+      const url = new URL(location.href); url.searchParams.set('variant', state.variant); history.replaceState({}, '', url);
+      render();
+    }
+
+    function showToast(text) {
+      state.toast = text; render();
+      setTimeout(() => { state.toast = ''; render(); }, 1800);
+    }
+
+    function downloadReport() {
+      const html = `<!doctype html><meta charset="utf-8"><title>MRR 下降原因分析报告</title><style>body{font:15px/1.65 system-ui;max-width:820px;margin:40px auto;padding:0 24px;color:#202622}h1{line-height:1.25}.lead{padding:16px;border-left:4px solid #a64242;background:#f7e3e1}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #d7ddd9;text-align:left}</style><h1>本月 MRR 下降主要来自 SMB 年付客户流失</h1><p>报告 ID: rpt_0827_7c82 | 数据截至: 2026-08-27 | 指标版本: MRR v3</p><p class="lead">本月 MRR 环比下降 7.8%。其中 63% 的下降来自 SMB 客户，Starter 套餐的年付客户流失是最主要原因。</p><h2>证据</h2><table><tr><th>客户分层</th><th>MRR 变化</th><th>贡献占比</th></tr><tr><td>SMB</td><td>-¥413K</td><td>63%</td></tr><tr><td>Mid-market</td><td>-¥161K</td><td>25%</td></tr><tr><td>Enterprise</td><td>-¥78K</td><td>12%</td></tr></table><h2>限制</h2><p>本结论未验证客户访谈信息，不能直接推断流失动机。</p>`;
+      const link = document.createElement('a');
+      const reportUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      link.href = reportUrl; link.download = 'askmetric-mrr-report.html'; link.hidden = true;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(reportUrl), 1000);
+      showToast('HTML 报告已下载');
+    }
+
+    document.addEventListener('submit', (event) => {
+      if (!event.target.matches('[data-form="composer"]')) return;
+      event.preventDefault(); const input = event.target.elements.message; sendMessage(input.value); input.value = '';
+    });
+
+    document.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-action]'); if (!target) return;
+      const action = target.dataset.action;
+      if (action === 'preset') sendMessage(target.dataset.value || '');
+      if (action === 'clarify') clarify();
+      if (action === 'custom-clarify') { addMessage('assistant', '请输入自定义口径。该输入会继续当前 Task，不会创建新 Task。'); render(); }
+      if (action === 'approve') approve(true);
+      if (action === 'reject') approve(false);
+      if (action === 'stop') stopRun();
+      if (action === 'reset') resetDemo();
+      if (action === 'toggle-state') { state.inspectorOpen = !state.inspectorOpen; render(); }
+      if (action === 'toggle-theme') { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); }
+      if (action === 'open-report') { state.reportOpen = true; render(); }
+      if (action === 'close-report') { state.reportOpen = false; render(); }
+      if (action === 'download-report') downloadReport();
+      if (action === 'variant-prev') changeVariant(-1);
+      if (action === 'variant-next') changeVariant(1);
+    });
+
+    document.addEventListener('keydown', (event) => {
+      const tag = event.target.tagName; if (['INPUT', 'TEXTAREA'].includes(tag) || event.target.isContentEditable) return;
+      if (event.key === 'ArrowLeft') changeVariant(-1);
+      if (event.key === 'ArrowRight') changeVariant(1);
+      if (event.key === 'Escape' && state.reportOpen) { state.reportOpen = false; render(); }
+    });
+
+    render();
+  </script>
+</body>
+</html>
