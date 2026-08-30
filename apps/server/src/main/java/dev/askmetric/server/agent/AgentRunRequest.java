@@ -1,30 +1,36 @@
 package dev.askmetric.server.agent;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * Java 发布给 Python Agent Runtime 的版本化 Agent Run 请求事件。
- *
- * @param eventId 本次请求事件的全局唯一 ID，同时用作消费者去重键
- * @param schemaVersion JSON 契约的版本号，当前固定为 1
- * @param eventType 事件种类，当前固定为 {@link AgentRunEventType#REQUESTED}
- * @param sequence 该 Agent Run 内的事件序号，创建请求固定为 1
- * @param occurredAt Java 创建请求事件的 UTC 时间
- * @param conversationId 触发运行的对话 ID
- * @param runId Java 持久化的 Agent Run ID
- * @param message 由业务用户提交、交给 Agent 解释的消息正文
  */
-public record AgentRunRequest(
-        String eventId,
-        int schemaVersion,
-        AgentRunEventType eventType,
-        long sequence,
-        Instant occurredAt,
-        String conversationId,
-        String runId,
-        String message
-) {
-    public AgentRunRequest {
+@Data
+@NoArgsConstructor
+public class AgentRunRequest {
+    private String eventId;
+    private int schemaVersion;
+    private AgentRunEventType eventType;
+    private long sequence;
+    private Instant occurredAt;
+    private String conversationId;
+    private String runId;
+    private String message;
+
+    @JsonCreator
+    public AgentRunRequest(
+            @JsonProperty("eventId") String eventId,
+            @JsonProperty("schemaVersion") int schemaVersion,
+            @JsonProperty("eventType") AgentRunEventType eventType,
+            @JsonProperty("sequence") long sequence,
+            @JsonProperty("occurredAt") Instant occurredAt,
+            @JsonProperty("conversationId") String conversationId,
+            @JsonProperty("runId") String runId,
+            @JsonProperty("message") String message) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
@@ -44,6 +50,14 @@ public record AgentRunRequest(
         if (message.length() > 4000) {
             throw new IllegalArgumentException("message must be at most 4000 characters");
         }
+        this.eventId = eventId;
+        this.schemaVersion = schemaVersion;
+        this.eventType = eventType;
+        this.sequence = sequence;
+        this.occurredAt = occurredAt;
+        this.conversationId = conversationId;
+        this.runId = runId;
+        this.message = message;
     }
 
     private static void requireText(String value, String field) {

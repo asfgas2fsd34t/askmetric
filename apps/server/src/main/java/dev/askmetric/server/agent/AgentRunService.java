@@ -15,7 +15,7 @@ public class AgentRunService {
         this.gateway = gateway;
     }
 
-    public AgentRunAccepted submit(String conversationId, AgentRunSubmission submission) {
+    public AgentRunAccepted submit(String workspaceId, String conversationId, AgentRunSubmission submission) {
         String runId = "run_" + UUID.randomUUID();
         AgentRunRequest request = new AgentRunRequest(
                 UUID.randomUUID().toString(),
@@ -25,15 +25,15 @@ public class AgentRunService {
                 Instant.now(),
                 conversationId,
                 runId,
-                submission.message().trim());
-        store.create(runId, conversationId);
+                submission.getMessage().trim());
+        store.create(runId, workspaceId, conversationId);
         // 先记录 QUEUED，确保消息队列投递失败时仍有可审计的 Agent Run 与连续事件序号。
         store.append(new AgentRunEvent(
-                request.eventId(),
+                request.getEventId(),
                 1,
                 AgentRunEventType.ACCEPTED,
                 1,
-                request.occurredAt(),
+                request.getOccurredAt(),
                 conversationId,
                 runId,
                 "Agent Run 已进入队列",
@@ -62,8 +62,8 @@ public class AgentRunService {
         store.append(event);
     }
 
-    public boolean exists(String conversationId, String runId) {
-        return store.exists(runId, conversationId);
+    public boolean exists(String workspaceId, String conversationId, String runId) {
+        return store.exists(runId, workspaceId, conversationId);
     }
 
     public void addReplay(String runId, long afterSequence, SseEmitter emitter) {

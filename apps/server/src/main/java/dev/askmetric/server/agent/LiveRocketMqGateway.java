@@ -79,7 +79,7 @@ public class LiveRocketMqGateway implements RocketMqGateway {
             var message = provider.newMessageBuilder()
                     .setTopic(requestTopic)
                     .setTag("agent-run")
-                    .setKeys(request.eventId())
+                    .setKeys(request.getEventId())
                     .setBody(objectMapper.writeValueAsBytes(request))
                     .build();
             producer.send(message);

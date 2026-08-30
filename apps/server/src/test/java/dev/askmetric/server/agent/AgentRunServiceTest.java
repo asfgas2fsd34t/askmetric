@@ -25,12 +25,12 @@ class AgentRunServiceTest {
         };
 
         var accepted = new AgentRunService(store, gateway)
-                .submit("conversation-1", new AgentRunSubmission("  hello  "));
+                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("  hello  "));
 
         assertThat(published.get()).isNotNull();
-        assertThat(published.get().message()).isEqualTo("hello");
-        assertThat(store.snapshot(accepted.runId()))
-                .extracting(AgentRunEvent::eventType)
+        assertThat(published.get().getMessage()).isEqualTo("hello");
+        assertThat(store.snapshot(accepted.getRunId()))
+                .extracting(AgentRunEvent::getEventType)
                 .containsExactly(AgentRunEventType.ACCEPTED);
     }
 
@@ -48,12 +48,14 @@ class AgentRunServiceTest {
         };
 
         var accepted = new AgentRunService(store, gateway)
-                .submit("conversation-1", new AgentRunSubmission("hello"));
+                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("hello"));
 
         assertThat(new AgentRunService(store, gateway)
-                .exists("conversation-1", accepted.runId())).isTrue();
+                .exists("workspace-demo", "conversation-1", accepted.getRunId())).isTrue();
         assertThat(new AgentRunService(store, gateway)
-                .exists("conversation-2", accepted.runId())).isFalse();
+                .exists("workspace-growth", "conversation-1", accepted.getRunId())).isFalse();
+        assertThat(new AgentRunService(store, gateway)
+                .exists("workspace-demo", "conversation-2", accepted.getRunId())).isFalse();
     }
 
     @Test
@@ -73,23 +75,23 @@ class AgentRunServiceTest {
         };
 
         var thrown = catchThrowable(() -> new AgentRunService(store, gateway)
-                .submit("conversation-1", new AgentRunSubmission("hello")));
+                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("hello")));
         assertThat(thrown)
                 .isInstanceOf(AgentRunPublishException.class)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("broker unavailable");
         assertThat(((AgentRunPublishException) thrown).accepted())
-                .extracting(AgentRunAccepted::runId)
-                .isEqualTo(published.get().runId());
-        assertThat(store.snapshot(published.get().runId()))
-                .extracting(AgentRunEvent::eventType)
+                .extracting(AgentRunAccepted::getRunId)
+                .isEqualTo(published.get().getRunId());
+        assertThat(store.snapshot(published.get().getRunId()))
+                .extracting(AgentRunEvent::getEventType)
                 .containsExactly(AgentRunEventType.ACCEPTED, AgentRunEventType.FAILED);
     }
 
     @Test
     void ignoresAStaleEventSequenceDuringRedelivery() {
         var store = new AgentRunStore();
-        store.create("run-1", "conversation-1");
+        store.create("run-1", "workspace-demo", "conversation-1");
         var accepted = new AgentRunEvent(
                 "evt-accepted", 1, AgentRunEventType.ACCEPTED, 1,
                 Instant.parse("2026-08-28T02:00:00Z"), "conversation-1", "run-1",
@@ -125,7 +127,7 @@ class AgentRunServiceTest {
     @Test
     void ignoresEventsAfterTheRunReachesATerminalState() {
         var store = new AgentRunStore();
-        store.create("run-1", "conversation-1");
+        store.create("run-1", "workspace-demo", "conversation-1");
         store.append(new AgentRunEvent(
                 "evt-accepted", 1, AgentRunEventType.ACCEPTED, 1,
                 Instant.parse("2026-08-28T02:00:00Z"), "conversation-1", "run-1",
@@ -149,7 +151,7 @@ class AgentRunServiceTest {
     @Test
     void rejectsSkippingTheRunningState() {
         var store = new AgentRunStore();
-        store.create("run-1", "conversation-1");
+        store.create("run-1", "workspace-demo", "conversation-1");
         store.append(new AgentRunEvent(
                 "evt-accepted", 1, AgentRunEventType.ACCEPTED, 1,
                 Instant.parse("2026-08-28T02:00:00Z"), "conversation-1", "run-1",

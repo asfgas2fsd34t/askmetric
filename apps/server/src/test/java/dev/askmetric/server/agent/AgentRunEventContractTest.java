@@ -13,8 +13,8 @@ class AgentRunEventContractTest {
                 Instant.parse("2026-08-28T02:00:00Z"), "conv-1", "run-1",
                 "Synthetic Agent Run completed", AgentRunEventSource.PYTHON);
 
-        assertThat(event.schemaVersion()).isEqualTo(1);
-        assertThat(event.sequence()).isEqualTo(2);
+        assertThat(event.getSchemaVersion()).isEqualTo(1);
+        assertThat(event.getSequence()).isEqualTo(2);
     }
 
 }

@@ -37,7 +37,7 @@ PYTHONPATH=apps/agent pytest -q apps/agent/tests
 
 ## T04 Workspace 登录
 
-Docker Compose 会启动 Keycloak、受保护的 Java API 和 Vue 工作区：
+Docker Compose 会启动 PostgreSQL、Keycloak、受保护的 Java API 和 Vue 工作区：
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build -d
@@ -45,6 +45,12 @@ bash scripts/smoke-workspace-identity.sh
 ```
 
 打开 `http://localhost:5173`，使用本地演示身份 `alice` / `askmetric-demo` 登录。Vue 只能展示 Java 根据当前 Workspace Membership 确认的工作区；未认证 API 请求返回 `401`，不属于当前用户的 Workspace 选择返回 `403`。
+
+Workspace、Workspace Membership、Workspace Policy 和 Conversation 由 PostgreSQL 持久化。Java 通过 MyBatis 在每条查询中绑定认证用户和经 Membership 验证的 Workspace，并按每个操作同时检查成员权限与策略：
+
+```bash
+bash scripts/smoke-workspace-isolation.sh
+```
 
 ## 首版范围
 
