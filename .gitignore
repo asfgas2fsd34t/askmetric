@@ -1,6 +1,10 @@
 .DS_Store
 .idea/
 target/
+node_modules/
+dist/
+playwright-report/
+test-results/
 __pycache__/
 *.py[cod]
 .venv/

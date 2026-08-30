@@ -14,6 +14,12 @@ management:
 spring:
   application:
     name: askmetric-server
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8082/realms/askmetric}
+          jwk-set-uri: ${OIDC_JWK_SET_URI:http://localhost:8082/realms/askmetric/protocol/openid-connect/certs}
 
 askmetric:
   rocketmq:

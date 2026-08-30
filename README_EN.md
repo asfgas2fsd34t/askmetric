@@ -35,6 +35,17 @@ python -m pip install -r apps/agent/requirements.txt pytest
 PYTHONPATH=apps/agent pytest -q apps/agent/tests
 ```
 
+## T04 Workspace sign-in
+
+Docker Compose starts Keycloak, the protected Java API, and the Vue workspace:
+
+```bash
+docker compose -f infra/docker-compose.yml up --build -d
+bash scripts/smoke-workspace-identity.sh
+```
+
+Open `http://localhost:5173` and sign in with the local demo identity `alice` / `askmetric-demo`. Vue only displays a Workspace confirmed by Java from the current Workspace Membership; unauthenticated API requests return `401`, and a Workspace selection outside that membership returns `403`.
+
 ## Scope
 
 The first release proves one complete B2B SaaS analysis workflow against deterministic synthetic data. It supports multi-turn conversations, governed SQL, cited RAG, confirmed memory, human-approved MCP actions, reproducible HTML reports, tracing, and public evaluations.

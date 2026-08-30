@@ -3,19 +3,25 @@ set -euo pipefail
 
 base_url="${ASKMETRIC_BASE_URL:-http://localhost:8080}"
 conversation_id="smoke-conversation"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+access_token="${ASKMETRIC_ACCESS_TOKEN:-$("$script_dir/demo-access-token.sh")}"
+python_command="$(command -v python3 || command -v python)"
 
 response="$(curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer $access_token" \
   -H 'Content-Type: application/json' \
   -d '{"message":"smoke agent run"}' \
   "${base_url}/api/v1/conversations/${conversation_id}/runs")"
 
-run_id="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["runId"])')"
-events_url="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["eventsUrl"])')"
+run_id="$(printf '%s' "$response" | "$python_command" -c 'import json,sys; print(json.load(sys.stdin)["runId"])')"
+events_url="$(printf '%s' "$response" | "$python_command" -c 'import json,sys; print(json.load(sys.stdin)["eventsUrl"])')"
 
-events="$(curl --fail-with-body --silent --show-error --max-time 15 "${base_url}${events_url}")"
+events="$(curl --fail-with-body --silent --show-error --max-time 15 \
+  -H "Authorization: Bearer $access_token" \
+  "${base_url}${events_url}")"
 printf '%s\n' "$events"
 
-printf '%s\n' "$events" | ASKMETRIC_EXPECTED_RUN_ID="$run_id" python3 -c '
+printf '%s\n' "$events" | ASKMETRIC_EXPECTED_RUN_ID="$run_id" "$python_command" -c '
 import json
 import os
 import sys

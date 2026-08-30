@@ -1,0 +1,69 @@
+openapi: 3.1.0
+info:
+  title: AskMetric API
+  version: 1.0.0
+paths:
+  /api/v1/session:
+    get:
+      operationId: getWorkspaceSession
+      summary: Return the authenticated user's Workspace Membership context
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Workspace-Id
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Authenticated Workspace Membership context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSession"
+        "401":
+          description: Authentication is required
+        "403":
+          description: The requested Workspace is not available to the current user
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    WorkspaceSession:
+      type: object
+      required: [user, currentMembership, memberships]
+      properties:
+        user:
+          $ref: "#/components/schemas/CurrentUser"
+        currentMembership:
+          $ref: "#/components/schemas/WorkspaceMembership"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceMembership"
+    CurrentUser:
+      type: object
+      required: [id, username, displayName, email]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+    WorkspaceMembership:
+      type: object
+      required: [membershipId, workspaceId, workspaceName]
+      properties:
+        membershipId:
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
