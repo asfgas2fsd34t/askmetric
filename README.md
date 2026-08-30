@@ -35,6 +35,16 @@ python -m pip install -r apps/agent/requirements.txt pytest
 PYTHONPATH=apps/agent pytest -q apps/agent/tests
 ```
 
+## T03 确定性 HTML 报告探针
+
+Java 使用固定结构化分析、受控模板和内联 CSS 生成无需服务端即可打开的独立 HTML。命令会输出报告的 SHA-256：
+
+```bash
+mvn -q -f apps/server/pom.xml -DskipTests package
+java -cp apps/server/target/classes dev.askmetric.server.report.ReportProbe target/report-probe.html
+bash scripts/smoke-report.sh
+```
+
 ## 首版范围
 
 首版使用确定性的 B2B SaaS 合成数据，证明一条完整分析链路。它支持多轮对话、受治理的 SQL、带引用的 RAG、经确认的长期记忆、人工审批的 MCP 操作、可重现的 HTML 报告、全链路 Trace 和公开评测。
