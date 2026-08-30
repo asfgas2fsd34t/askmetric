@@ -4,7 +4,7 @@
 
 Chat-first enterprise BI agent platform with Java business services and a Python Agent Runtime.
 
-> Status: the T01 bidirectional Agent Run probe is implemented; persistence, the Vue workspace, and analysis capabilities will follow the roadmap.
+> Status: the T01 bidirectional Agent Run and T02 LangGraph Checkpoint recovery probes are implemented; persistence, the Vue workspace, and analysis capabilities will follow the roadmap.
 
 AskMetric turns business questions into auditable analyses and self-contained HTML reports. It uses a Vue client, a Spring Boot modular monolith, and a Python LangGraph runtime while keeping data access, authorization, approvals, and side effects under Java governance.
 
@@ -33,6 +33,15 @@ The smoke check submits a message through the Conversation REST entry point, rea
 mvn -f apps/server/pom.xml test
 python -m pip install -r apps/agent/requirements.txt pytest
 PYTHONPATH=apps/agent pytest -q apps/agent/tests
+```
+
+## Run the T02 Checkpoint recovery probe
+
+The independent smoke check stores LangGraph checkpoints in PostgreSQL. It stops one Python container after the `record_progress` node, starts a new container to resume the same Agent Run, and verifies correlation identifiers, event sequence, and that recorded events are not duplicated:
+
+```bash
+bash scripts/smoke-checkpoint.sh
+docker compose -f infra/docker-compose.yml down -v
 ```
 
 ## Scope

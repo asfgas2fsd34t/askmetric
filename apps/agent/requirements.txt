@@ -3,3 +3,6 @@ grpcio==1.66.2
 grpcio-tools==1.66.2
 protobuf==5.28.3
 jsonschema==4.23.0
+langgraph==1.2.11
+langgraph-checkpoint-postgres==3.1.2
+psycopg[binary]==3.3.4

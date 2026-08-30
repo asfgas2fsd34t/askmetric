@@ -4,7 +4,7 @@
 
 一个由 Java 业务服务和 Python Agent Runtime 组成的 chat-first 企业级 BI Agent 平台。
 
-> 当前状态：T01 双向 Agent Run 技术探针已实现；业务持久化、Vue 工作区和后续分析能力按路线逐步交付。
+> 当前状态：T01 双向 Agent Run 与 T02 LangGraph Checkpoint 恢复技术探针已实现；业务持久化、Vue 工作区和后续分析能力按路线逐步交付。
 
 AskMetric 将业务问题转化为可审计分析和独立 HTML 报告。系统由 Vue 前端、Spring Boot 模块化单体和 Python LangGraph Runtime 组成，数据访问、权限、审批和副作用操作统一由 Java 治理。
 
@@ -33,6 +33,15 @@ Smoke Check 会从 Conversation REST 入口提交消息，读取 SSE，并校验
 mvn -f apps/server/pom.xml test
 python -m pip install -r apps/agent/requirements.txt pytest
 PYTHONPATH=apps/agent pytest -q apps/agent/tests
+```
+
+## T02 Checkpoint 恢复探针
+
+独立 Smoke Check 使用 PostgreSQL 保存 LangGraph Checkpoint。脚本先让一个 Python 容器在 `record_progress` 节点后退出，再启动新容器恢复同一个 Agent Run，并校验关联标识、事件序号以及已记录事件不会重复：
+
+```bash
+bash scripts/smoke-checkpoint.sh
+docker compose -f infra/docker-compose.yml down -v
 ```
 
 ## 首版范围

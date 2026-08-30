@@ -1,4 +1,19 @@
 services:
+  checkpoint-db:
+    profiles: ["checkpoint"]
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: askmetric_agent
+      POSTGRES_USER: askmetric_agent
+      POSTGRES_PASSWORD: askmetric_agent
+    volumes:
+      - checkpoint-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askmetric_agent -d askmetric_agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   namesrv:
     image: apache/rocketmq:5.3.3
     command: sh mqnamesrv
@@ -86,3 +101,18 @@ services:
       ROCKETMQ_ENDPOINTS: proxy:8081
       ROCKETMQ_REQUEST_TOPIC: ${ROCKETMQ_REQUEST_TOPIC:-askmetric-agent-run-request}
       ROCKETMQ_EVENT_TOPIC: ${ROCKETMQ_EVENT_TOPIC:-askmetric-agent-run-event}
+
+  checkpoint-probe:
+    profiles: ["checkpoint"]
+    build:
+      context: ..
+      dockerfile: apps/agent/Dockerfile
+    depends_on:
+      checkpoint-db:
+        condition: service_healthy
+    environment:
+      CHECKPOINT_DATABASE_URL: postgresql://askmetric_agent:askmetric_agent@checkpoint-db:5432/askmetric_agent
+    entrypoint: ["python", "-m", "agent_runtime.checkpoint_probe"]
+
+volumes:
+  checkpoint-data:
