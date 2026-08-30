@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://askmetric.dev/contracts/events/agent-run-event.v1.json",
+  "title": "AskMetric Agent Run Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "schemaVersion",
+    "eventType",
+    "sequence",
+    "occurredAt",
+    "conversationId",
+    "runId",
+    "message",
+    "source"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "minLength": 1 },
+    "schemaVersion": { "const": 1 },
+    "eventType": { "enum": ["agent.run.accepted", "agent.run.progress", "agent.run.completed", "agent.run.failed"] },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "conversationId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "source": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,24 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+spring:
+  application:
+    name: askmetric-server
+
+askmetric:
+  rocketmq:
+    enabled: ${ROCKETMQ_ENABLED:false}
+    endpoints: ${ROCKETMQ_ENDPOINTS:localhost:8081}
+    request-topic: ${ROCKETMQ_REQUEST_TOPIC:askmetric-agent-run-request}
+    event-topic: ${ROCKETMQ_EVENT_TOPIC:askmetric-agent-run-event}
+    consumer-group: ${ROCKETMQ_CONSUMER_GROUP:askmetric-server-events}

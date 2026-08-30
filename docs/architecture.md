@@ -121,7 +121,7 @@ Python Runtime 使用一个有边界的 LangGraph 状态图：
 
 Java 在一个数据库事务中提交 Agent 运行和 Outbox 记录。Publisher 将版本化 JSON 事件发送到 RocketMQ 5；Python 使用 Apache 当前的 gRPC Client 消费，再通过 RocketMQ 返回进度和结果事件。
 
-消息采用 at-least-once 语义。事件信封包含 `eventId`、`schemaVersion`、`correlationId`、聚合对象标识和序号。消费者在修改状态前去重，并拒绝不兼容的 Schema。临时故障使用有限次数的指数退避重试，超过上限后进入死信队列。重放从 Checkpoint 恢复，且不能重复执行已批准操作。
+消息采用 at-least-once 语义。事件信封包含 `eventId`、`schemaVersion`、`runId` 和序号。消费者在修改状态前去重，并拒绝不兼容的 Schema。T01 暂不携带链路追踪 ID，后续接入 OpenTelemetry 时通过新契约版本增加 `traceId`/`spanId`。临时故障使用有限次数的指数退避重试，超过上限后进入死信队列。重放从 Checkpoint 恢复，且不能重复执行已批准操作。
 
 第一周技术探针必须在业务功能依赖该链路前，证明容器中的 Java -> RocketMQ -> Python -> RocketMQ -> Java 双向通信可用。
 

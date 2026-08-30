@@ -4,7 +4,7 @@
 
 一个由 Java 业务服务和 Python Agent Runtime 组成的 chat-first 企业级 BI Agent 平台。
 
-> 当前状态：架构与领域设计已经完成，尚未开始编码实现。
+> 当前状态：T01 双向 Agent Run 技术探针已实现；业务持久化、Vue 工作区和后续分析能力按路线逐步交付。
 
 AskMetric 将业务问题转化为可审计分析和独立 HTML 报告。系统由 Vue 前端、Spring Boot 模块化单体和 Python LangGraph Runtime 组成，数据访问、权限、审批和副作用操作统一由 Java 治理。
 
@@ -14,7 +14,26 @@ AskMetric 将业务问题转化为可审计分析和独立 HTML 报告。系统�
 - [12 周开发路线](docs/roadmap.md)
 - [领域词汇](CONTEXT.md)
 - [架构决策](docs/adr/)
+- [待解决问题](docs/pending-issues.md)
 - [Agent 协作约定](AGENTS.md)
+
+## T01 本地运行
+
+需要 Docker Desktop、Java 21 和 Python 3.12。启动 RocketMQ、Java Server 和 Python Agent：
+
+```bash
+docker compose -f infra/docker-compose.yml up --build -d
+bash scripts/smoke-agent-run.sh
+docker compose -f infra/docker-compose.yml down -v
+```
+
+Smoke Check 会从 Conversation REST 入口提交消息，读取 SSE，并校验 `accepted`、`progress` 和 `completed` 事件。契约测试可以分别运行：
+
+```bash
+mvn -f apps/server/pom.xml test
+python -m pip install -r apps/agent/requirements.txt pytest
+PYTHONPATH=apps/agent pytest -q apps/agent/tests
+```
 
 ## 首版范围
 

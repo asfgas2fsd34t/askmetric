@@ -1,0 +1,88 @@
+services:
+  namesrv:
+    image: apache/rocketmq:5.3.3
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'boot success' /home/rocketmq/logs/rocketmqlogs/namesrv.log"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  broker:
+    image: apache/rocketmq:5.3.3
+    depends_on:
+      namesrv:
+        condition: service_healthy
+    environment:
+      NAMESRV_ADDR: namesrv:9876
+    volumes:
+      - ./rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.3/conf/broker.conf:ro
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.3/conf/broker.conf
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'boot success' /home/rocketmq/logs/rocketmqlogs/broker.log && sh mqadmin clusterList -n namesrv:9876 2>/dev/null | grep -q broker-a"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  topic-init:
+    image: apache/rocketmq:5.3.3
+    depends_on:
+      broker:
+        condition: service_healthy
+    environment:
+      ROCKETMQ_REQUEST_TOPIC: ${ROCKETMQ_REQUEST_TOPIC:-askmetric-agent-run-request}
+      ROCKETMQ_EVENT_TOPIC: ${ROCKETMQ_EVENT_TOPIC:-askmetric-agent-run-event}
+    command: >-
+      sh -c "until sh mqadmin updateTopic -n namesrv:9876 -t $$ROCKETMQ_REQUEST_TOPIC -c DefaultCluster >/dev/null 2>&1
+      && sh mqadmin topicRoute -n namesrv:9876 -t $$ROCKETMQ_REQUEST_TOPIC >/dev/null 2>&1; do sleep 2; done;
+      until sh mqadmin updateTopic -n namesrv:9876 -t $$ROCKETMQ_EVENT_TOPIC -c DefaultCluster >/dev/null 2>&1
+      && sh mqadmin topicRoute -n namesrv:9876 -t $$ROCKETMQ_EVENT_TOPIC >/dev/null 2>&1; do sleep 2; done"
+
+  proxy:
+    image: apache/rocketmq:5.3.3
+    depends_on:
+      broker:
+        condition: service_healthy
+    environment:
+      NAMESRV_ADDR: namesrv:9876
+    command: sh mqproxy -n namesrv:9876
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'startup successfully' /home/rocketmq/logs/rocketmqlogs/proxy.log"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    depends_on:
+      proxy:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    environment:
+      ROCKETMQ_ENABLED: "true"
+      ROCKETMQ_ENDPOINTS: proxy:8081
+      ROCKETMQ_REQUEST_TOPIC: ${ROCKETMQ_REQUEST_TOPIC:-askmetric-agent-run-request}
+      ROCKETMQ_EVENT_TOPIC: ${ROCKETMQ_EVENT_TOPIC:-askmetric-agent-run-event}
+    ports:
+      - "8080:8080"
+
+  agent:
+    build:
+      context: ..
+      dockerfile: apps/agent/Dockerfile
+    depends_on:
+      proxy:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    environment:
+      ROCKETMQ_ENDPOINTS: proxy:8081
+      ROCKETMQ_REQUEST_TOPIC: ${ROCKETMQ_REQUEST_TOPIC:-askmetric-agent-run-request}
+      ROCKETMQ_EVENT_TOPIC: ${ROCKETMQ_EVENT_TOPIC:-askmetric-agent-run-event}
