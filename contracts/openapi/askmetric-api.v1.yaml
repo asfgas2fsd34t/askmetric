@@ -26,7 +26,107 @@ paths:
           description: Authentication is required
         "403":
           description: The requested Workspace is not available to the current user
+  /api/v1/conversations:
+    get:
+      operationId: listConversations
+      summary: List Conversation summaries in the current Workspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Conversation summaries ordered by most recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConversationSummary"
+        "403":
+          description: The Workspace is not available to the current user
+    post:
+      operationId: createConversation
+      summary: Create a Conversation in the current Workspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationRequest"
+      responses:
+        "201":
+          description: Created Conversation snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationSnapshot"
+        "400":
+          description: Invalid title
+        "403":
+          description: The Workspace is not available to the current user
+  /api/v1/conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      summary: Return the persisted Conversation snapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Conversation and its ordered Messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationSnapshot"
+        "403":
+          description: The Conversation is not available in the current Workspace
+  /api/v1/conversations/{conversationId}/messages:
+    post:
+      operationId: createMessage
+      summary: Persist a user Message in a Conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "201":
+          description: Persisted Message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationMessage"
+        "400":
+          description: Invalid message content
+        "403":
+          description: The Conversation is not available in the current Workspace
 components:
+  parameters:
+    WorkspaceId:
+      in: header
+      name: X-Workspace-Id
+      required: false
+      schema:
+        type: string
+    ConversationId:
+      in: path
+      name: conversationId
+      required: true
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -67,3 +167,77 @@ components:
           type: string
         workspaceName:
           type: string
+    ConversationSummary:
+      type: object
+      required: [conversationId, title, messageCount, createdAt, updatedAt]
+      properties:
+        conversationId:
+          type: string
+        title:
+          type: string
+        messageCount:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ConversationSnapshot:
+      type: object
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages]
+      properties:
+        conversationId:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+    ConversationMessage:
+      type: object
+      required: [messageId, conversationId, author, sequence, content, createdAt]
+      properties:
+        messageId:
+          type: string
+        conversationId:
+          type: string
+        author:
+          type: string
+          enum: [user, assistant, system]
+        authorSubject:
+          type: [string, "null"]
+        sequence:
+          type: integer
+          format: int64
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    CreateConversationRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000

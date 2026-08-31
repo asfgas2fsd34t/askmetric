@@ -1,19 +1,43 @@
 <script setup lang="ts">
-import { Building2, LogOut, MessagesSquare, PanelRight, RefreshCw, UserRound } from "lucide-vue-next";
+import {
+  Building2,
+  LogOut,
+  MessagesSquare,
+  PanelRight,
+  Plus,
+  RefreshCw,
+  Send,
+  UserRound,
+} from "lucide-vue-next";
 import { onMounted, ref } from "vue";
 
 import { accessToken, logout } from "./auth";
+import {
+  createConversation,
+  createMessage,
+  loadConversation,
+  loadConversations,
+  type ConversationSnapshot,
+  type ConversationSummary,
+} from "./conversation";
 import { loadWorkspaceSession, type WorkspaceSession } from "./session";
 
 const session = ref<WorkspaceSession>();
+const conversations = ref<ConversationSummary[]>([]);
+const activeConversation = ref<ConversationSnapshot>();
 const loading = ref(true);
+const conversationLoading = ref(false);
+const sending = ref(false);
 const error = ref("");
+const conversationError = ref("");
+const draft = ref("");
 
 async function refresh(requestedWorkspaceId?: string) {
   loading.value = true;
   error.value = "";
   try {
     session.value = await loadWorkspaceSession(await accessToken(), requestedWorkspaceId);
+    await refreshConversations(session.value.currentMembership.workspaceId);
   } catch {
     error.value = "无法加载工作区";
   } finally {
@@ -22,7 +46,80 @@ async function refresh(requestedWorkspaceId?: string) {
 }
 
 function selectWorkspace(event: Event) {
+  activeConversation.value = undefined;
+  conversations.value = [];
   void refresh((event.target as HTMLSelectElement).value);
+}
+
+async function refreshConversations(workspaceId: string, preferredConversationId?: string) {
+  conversationLoading.value = true;
+  conversationError.value = "";
+  try {
+    const token = await accessToken();
+    conversations.value = await loadConversations(token, workspaceId);
+    const conversationId = preferredConversationId ?? conversations.value[0]?.conversationId;
+    activeConversation.value = conversationId
+      ? await loadConversation(token, workspaceId, conversationId)
+      : undefined;
+  } catch {
+    conversationError.value = "无法加载对话";
+  } finally {
+    conversationLoading.value = false;
+  }
+}
+
+async function openConversation(conversationId: string) {
+  if (!session.value || conversationId === activeConversation.value?.conversationId) return;
+  conversationLoading.value = true;
+  conversationError.value = "";
+  try {
+    activeConversation.value = await loadConversation(
+      await accessToken(),
+      session.value.currentMembership.workspaceId,
+      conversationId,
+    );
+  } catch {
+    conversationError.value = "无法打开对话";
+  } finally {
+    conversationLoading.value = false;
+  }
+}
+
+async function startConversation() {
+  if (!session.value || conversationLoading.value) return;
+  conversationLoading.value = true;
+  conversationError.value = "";
+  try {
+    const token = await accessToken();
+    const created = await createConversation(
+      token,
+      session.value.currentMembership.workspaceId,
+      "新对话",
+    );
+    await refreshConversations(session.value.currentMembership.workspaceId, created.conversationId);
+  } catch {
+    conversationError.value = "无法新建对话";
+    conversationLoading.value = false;
+  }
+}
+
+async function submitMessage() {
+  const content = draft.value.trim();
+  if (!session.value || !activeConversation.value || !content || sending.value) return;
+  sending.value = true;
+  conversationError.value = "";
+  try {
+    const token = await accessToken();
+    const workspaceId = session.value.currentMembership.workspaceId;
+    const conversationId = activeConversation.value.conversationId;
+    await createMessage(token, workspaceId, conversationId, content);
+    draft.value = "";
+    await refreshConversations(workspaceId, conversationId);
+  } catch {
+    conversationError.value = "消息发送失败";
+  } finally {
+    sending.value = false;
+  }
 }
 
 onMounted(() => refresh());
@@ -80,12 +177,85 @@ onMounted(() => refresh());
         <div class="panel-heading">
           <MessagesSquare :size="17" aria-hidden="true" />
           <h2 id="conversations-heading">对话</h2>
+          <button
+            class="icon-button rail-action"
+            type="button"
+            title="新建对话"
+            aria-label="新建对话"
+            :disabled="conversationLoading"
+            @click="startConversation"
+          >
+            <Plus :size="17" aria-hidden="true" />
+          </button>
         </div>
-        <div class="empty-list">暂无对话</div>
+        <div v-if="conversationError" class="conversation-error" role="alert">{{ conversationError }}</div>
+        <div v-if="!conversationLoading && conversations.length === 0" class="empty-list">暂无对话</div>
+        <nav v-else class="conversation-list" aria-label="对话列表">
+          <button
+            v-for="conversation in conversations"
+            :key="conversation.conversationId"
+            class="conversation-item"
+            :class="{ active: conversation.conversationId === activeConversation?.conversationId }"
+            type="button"
+            @click="openConversation(conversation.conversationId)"
+          >
+            <strong>{{ conversation.title }}</strong>
+            <small>{{ conversation.messageCount }} 条消息</small>
+          </button>
+        </nav>
       </aside>
 
       <section class="conversation-canvas" aria-labelledby="workspace-heading">
-        <div class="workspace-welcome">
+        <div v-if="activeConversation" class="conversation-view">
+          <header class="conversation-header">
+            <h1 id="workspace-heading">{{ activeConversation.title }}</h1>
+          </header>
+          <div class="message-timeline" aria-live="polite">
+            <article
+              v-for="message in activeConversation.messages"
+              :key="message.messageId"
+              class="message"
+              :class="`message-${message.author}`"
+            >
+              <span>
+                {{
+                  message.author === "user"
+                    ? message.authorSubject === session.user.id
+                      ? session.user.displayName
+                      : (message.authorSubject ?? "用户")
+                    : message.author === "assistant"
+                      ? "AskMetric"
+                      : "系统"
+                }}
+              </span>
+              <p>{{ message.content }}</p>
+              <time :datetime="message.createdAt">{{ new Date(message.createdAt).toLocaleTimeString() }}</time>
+            </article>
+            <div v-if="activeConversation.messages.length === 0" class="empty-list">暂无消息</div>
+          </div>
+          <form class="message-composer" @submit.prevent="submitMessage">
+            <label class="sr-only" for="message-draft">消息</label>
+            <textarea
+              id="message-draft"
+              v-model="draft"
+              maxlength="4000"
+              rows="2"
+              placeholder="输入消息"
+              :disabled="sending"
+              @keydown.ctrl.enter="submitMessage"
+            />
+            <button
+              class="send-button"
+              type="submit"
+              title="发送消息"
+              aria-label="发送消息"
+              :disabled="sending || !draft.trim()"
+            >
+              <Send :size="18" aria-hidden="true" />
+            </button>
+          </form>
+        </div>
+        <div v-else class="workspace-welcome">
           <span class="welcome-icon"><UserRound :size="22" aria-hidden="true" /></span>
           <p>{{ session.currentMembership.workspaceName }}</p>
           <h1 id="workspace-heading">你好，{{ session.user.displayName }}</h1>
@@ -109,6 +279,10 @@ onMounted(() => refresh());
           <div>
             <dt>当前用户</dt>
             <dd>{{ session.user.username }}</dd>
+          </div>
+          <div v-if="activeConversation">
+            <dt>当前对话</dt>
+            <dd>{{ activeConversation.conversationId }}</dd>
           </div>
         </dl>
       </aside>
