@@ -1,0 +1,17 @@
+package dev.askmetric.server.conversation;
+
+import java.time.Instant;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+public class ConversationMessage {
+    private String messageId;
+    private String conversationId;
+    private String author;
+    private String authorSubject;
+    private long sequence;
+    private String content;
+    private Instant createdAt;
+}
