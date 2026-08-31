@@ -1,9 +1,16 @@
 package dev.askmetric.server.agent;
 
+import dev.askmetric.server.workspace.WorkspaceAuthorizationService;
+import dev.askmetric.server.workspace.WorkspacePermission;
 import java.util.Optional;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,17 +29,28 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/v1/conversations")
 public class AgentRunController {
     private final AgentRunService service;
+    private final WorkspaceAuthorizationService workspaceAuthorization;
 
-    public AgentRunController(AgentRunService service) {
+    public AgentRunController(AgentRunService service, WorkspaceAuthorizationService workspaceAuthorization) {
         this.service = service;
+        this.workspaceAuthorization = workspaceAuthorization;
     }
 
     @PostMapping("/{conversationId}/runs")
     public ResponseEntity<?> submit(
+            @AuthenticationPrincipal Jwt identity,
+            @RequestHeader(value = "X-Workspace-Id", required = false) String requestedWorkspaceId,
             @PathVariable String conversationId,
             @RequestBody AgentRunSubmission submission) {
         try {
-            return ResponseEntity.accepted().body(service.submit(conversationId, submission));
+            String workspaceId = workspaceAuthorization
+                    .authorizeConversation(
+                            identity,
+                            Optional.ofNullable(requestedWorkspaceId),
+                            conversationId,
+                            WorkspacePermission.CREATE_AGENT_RUN)
+                    .currentWorkspaceId();
+            return ResponseEntity.accepted().body(service.submit(workspaceId, conversationId, submission));
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
         } catch (AgentRunPublishException exception) {
@@ -45,13 +63,22 @@ public class AgentRunController {
 
     @GetMapping(value = "/{conversationId}/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(
+            @AuthenticationPrincipal Jwt identity,
+            @RequestHeader(value = "X-Workspace-Id", required = false) String requestedWorkspaceId,
             @PathVariable String conversationId,
             @PathVariable String runId,
             @RequestHeader("Last-Event-ID") Optional<String> lastEventId) {
         if (runId.isBlank() || conversationId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationId and runId are required");
         }
-        if (!service.exists(conversationId, runId)) {
+        String workspaceId = workspaceAuthorization
+                .authorizeConversation(
+                        identity,
+                        Optional.ofNullable(requestedWorkspaceId),
+                        conversationId,
+                        WorkspacePermission.VIEW_AGENT_RUN)
+                .currentWorkspaceId();
+        if (!service.exists(workspaceId, conversationId, runId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent Run not found");
         }
         long afterSequence;
@@ -80,6 +107,10 @@ public class AgentRunController {
      *
      * @param error 面向客户端的错误说明
      */
-    public record ErrorResponse(String error) {
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ErrorResponse {
+        private String error;
     }
 }

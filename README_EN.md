@@ -56,7 +56,7 @@ bash scripts/smoke-report.sh
 
 ## T04 Workspace sign-in
 
-Docker Compose starts Keycloak, the protected Java API, and the Vue workspace:
+Docker Compose starts PostgreSQL, Keycloak, the protected Java API, and the Vue workspace:
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build -d
@@ -64,6 +64,12 @@ bash scripts/smoke-workspace-identity.sh
 ```
 
 Open `http://localhost:5173` and sign in with the local demo identity `alice` / `askmetric-demo`. Vue only displays a Workspace confirmed by Java from the current Workspace Membership; unauthenticated API requests return `401`, and a Workspace selection outside that membership returns `403`.
+
+PostgreSQL persists Workspace, Workspace Membership, Workspace Policy, and Conversation. Every MyBatis query binds the authenticated user and the Workspace validated from Membership, while Java checks both Membership permissions and Policy for each operation:
+
+```bash
+bash scripts/smoke-workspace-isolation.sh
+```
 
 ## Scope
 

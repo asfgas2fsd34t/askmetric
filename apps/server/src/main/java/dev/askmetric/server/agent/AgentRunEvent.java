@@ -1,32 +1,38 @@
 package dev.askmetric.server.agent;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * Python 或 Java 为某次 Agent Run 追加的版本化生命周期事件。
- *
- * @param eventId 事件的全局唯一 ID，用于至少一次投递时的幂等去重
- * @param schemaVersion JSON 契约的版本号，当前固定为 1
- * @param eventType 生命周期事件种类
- * @param sequence 该 Agent Run 内严格递增的事件序号
- * @param occurredAt 事件产生时的 UTC 时间
- * @param conversationId 该运行所属的对话 ID
- * @param runId Java 侧持久化的 Agent Run ID
- * @param message 可展示给客户端并保留在审计链路中的状态说明
- * @param source 产生事件的已登记应用
  */
-public record AgentRunEvent(
-        String eventId,
-        int schemaVersion,
-        AgentRunEventType eventType,
-        long sequence,
-        Instant occurredAt,
-        String conversationId,
-        String runId,
-        String message,
-        AgentRunEventSource source
-) {
-    public AgentRunEvent {
+@Data
+@NoArgsConstructor
+public class AgentRunEvent {
+    private String eventId;
+    private int schemaVersion;
+    private AgentRunEventType eventType;
+    private long sequence;
+    private Instant occurredAt;
+    private String conversationId;
+    private String runId;
+    private String message;
+    private AgentRunEventSource source;
+
+    @JsonCreator
+    public AgentRunEvent(
+            @JsonProperty("eventId") String eventId,
+            @JsonProperty("schemaVersion") int schemaVersion,
+            @JsonProperty("eventType") AgentRunEventType eventType,
+            @JsonProperty("sequence") long sequence,
+            @JsonProperty("occurredAt") Instant occurredAt,
+            @JsonProperty("conversationId") String conversationId,
+            @JsonProperty("runId") String runId,
+            @JsonProperty("message") String message,
+            @JsonProperty("source") AgentRunEventSource source) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
@@ -49,6 +55,15 @@ public record AgentRunEvent(
         if (message.length() > 4000) {
             throw new IllegalArgumentException("message must be at most 4000 characters");
         }
+        this.eventId = eventId;
+        this.schemaVersion = schemaVersion;
+        this.eventType = eventType;
+        this.sequence = sequence;
+        this.occurredAt = occurredAt;
+        this.conversationId = conversationId;
+        this.runId = runId;
+        this.message = message;
+        this.source = source;
     }
 
     private static void requireText(String value, String field) {
@@ -56,5 +71,4 @@ public record AgentRunEvent(
             throw new IllegalArgumentException(field + " is required");
         }
     }
-
 }

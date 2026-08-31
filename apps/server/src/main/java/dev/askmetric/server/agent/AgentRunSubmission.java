@@ -1,14 +1,23 @@
 package dev.askmetric.server.agent;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 /**
  * 业务用户从对话中提交的一次 Agent Run 输入。
- *
- * @param message 触发本次运行的原始用户消息
  */
-public record AgentRunSubmission(String message) {
-    public AgentRunSubmission {
+@Data
+@NoArgsConstructor
+public class AgentRunSubmission {
+    private String message;
+
+    @JsonCreator
+    public AgentRunSubmission(@JsonProperty("message") String message) {
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("message is required");
         }
+        this.message = message;
     }
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 base_url="${ASKMETRIC_BASE_URL:-http://localhost:8080}"
-conversation_id="smoke-conversation"
+conversation_id="conversation-demo"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 access_token="${ASKMETRIC_ACCESS_TOKEN:-$("$script_dir/demo-access-token.sh")}"
 python_command="$(command -v python3 || command -v python)"

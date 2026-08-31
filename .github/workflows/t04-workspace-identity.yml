@@ -30,6 +30,7 @@ jobs:
       - run: docker compose -f infra/docker-compose.yml up --build -d
       - run: timeout 180 bash -c 'until curl --fail --silent http://localhost:8080/actuator/health && curl --fail --silent http://localhost:5173; do sleep 3; done'
       - run: bash scripts/smoke-workspace-identity.sh
+      - run: bash scripts/smoke-workspace-isolation.sh
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
       - run: npm run test:e2e
