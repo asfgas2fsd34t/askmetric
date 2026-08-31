@@ -1,0 +1,45 @@
+{
+  "realm": "askmetric",
+  "enabled": true,
+  "displayName": "AskMetric",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "askmetric-web",
+      "name": "AskMetric Web",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Chen",
+      "email": "alice@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "askmetric-demo",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@askmetric/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vue-tsc --noEmit && vite build",
+    "generate:api": "openapi-typescript ../../contracts/openapi/askmetric-api.v1.yaml -o src/generated/api.ts",
+    "check:api": "npm run generate:api && git diff --exit-code -- src/generated/api.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "keycloak-js": "26.2.4",
+    "lucide-vue-next": "1.0.0",
+    "openapi-fetch": "0.17.0",
+    "vue": "3.5.42"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "@types/node": "26.4.0",
+    "@vitejs/plugin-vue": "6.0.8",
+    "openapi-typescript": "7.10.1",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "vue-tsc": "3.2.6"
+  }
+}

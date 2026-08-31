@@ -54,6 +54,17 @@ java -cp apps/server/target/classes dev.askmetric.server.report.ReportProbe targ
 bash scripts/smoke-report.sh
 ```
 
+## T04 Workspace 登录
+
+Docker Compose 会启动 Keycloak、受保护的 Java API 和 Vue 工作区：
+
+```bash
+docker compose -f infra/docker-compose.yml up --build -d
+bash scripts/smoke-workspace-identity.sh
+```
+
+打开 `http://localhost:5173`，使用本地演示身份 `alice` / `askmetric-demo` 登录。Vue 只能展示 Java 根据当前 Workspace Membership 确认的工作区；未认证 API 请求返回 `401`，不属于当前用户的 Workspace 选择返回 `403`。
+
 ## 首版范围
 
 首版使用确定性的 B2B SaaS 合成数据，证明一条完整分析链路。它支持多轮对话、受治理的 SQL、带引用的 RAG、经确认的长期记忆、人工审批的 MCP 操作、可重现的 HTML 报告、全链路 Trace 和公开评测。
