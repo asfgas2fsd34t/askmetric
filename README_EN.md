@@ -44,6 +44,16 @@ bash scripts/smoke-checkpoint.sh
 docker compose -f infra/docker-compose.yml down -v
 ```
 
+## Run the T03 deterministic HTML report probe
+
+Java renders a fixed structured analysis through a controlled template and inline CSS into a standalone HTML file. The command prints the report SHA-256:
+
+```bash
+mvn -q -f apps/server/pom.xml -DskipTests package
+java -cp apps/server/target/classes dev.askmetric.server.report.ReportProbe target/report-probe.html
+bash scripts/smoke-report.sh
+```
+
 ## Scope
 
 The first release proves one complete B2B SaaS analysis workflow against deterministic synthetic data. It supports multi-turn conversations, governed SQL, cited RAG, confirmed memory, human-approved MCP actions, reproducible HTML reports, tracing, and public evaluations.
