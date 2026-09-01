@@ -104,11 +104,11 @@ paths:
               $ref: "#/components/schemas/CreateMessageRequest"
       responses:
         "201":
-          description: Persisted user Message, deterministic assistant reply, and completed chat Agent Run
+          description: Persisted Message, routed Agent Run, and optional reply or Analysis Task
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ChatMessageCompleted"
+                $ref: "#/components/schemas/MessageProcessed"
         "400":
           description: Invalid message content
         "403":
@@ -186,7 +186,7 @@ components:
           format: date-time
     ConversationSnapshot:
       type: object
-      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns]
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks]
       properties:
         conversationId:
           type: string
@@ -208,6 +208,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentRun"
+        analysisTasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisTask"
     ConversationMessage:
       type: object
       required: [messageId, conversationId, author, sequence, content, createdAt]
@@ -229,9 +233,9 @@ components:
         createdAt:
           type: string
           format: date-time
-    ChatMessageCompleted:
+    MessageProcessed:
       type: object
-      required: [userMessage, assistantMessage, agentRun]
+      required: [userMessage, agentRun]
       properties:
         userMessage:
           $ref: "#/components/schemas/ConversationMessage"
@@ -239,9 +243,11 @@ components:
           $ref: "#/components/schemas/ConversationMessage"
         agentRun:
           $ref: "#/components/schemas/AgentRun"
+        analysisTask:
+          $ref: "#/components/schemas/AnalysisTask"
     AgentRun:
       type: object
-      required: [runId, conversationId, inputMessageId, intentRoute, createdAt, auditEvents]
+      required: [runId, conversationId, inputMessageId, intentRoute, intentConfidence, createdAt, auditEvents]
       properties:
         runId:
           type: string
@@ -252,6 +258,12 @@ components:
         intentRoute:
           type: string
           enum: [chat, analysis, task_control, approval]
+        intentConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        analysisTaskId:
+          type: [string, "null"]
         createdAt:
           type: string
           format: date-time
@@ -259,6 +271,24 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentRunAuditEvent"
+    AnalysisTask:
+      type: object
+      required: [analysisTaskId, conversationId, goal, status, sourceAgentRunId, createdAt]
+      properties:
+        analysisTaskId:
+          type: string
+        conversationId:
+          type: string
+        goal:
+          type: string
+        status:
+          type: string
+          enum: [active, waiting_for_input, waiting_for_approval, completed, failed, cancelled]
+        sourceAgentRunId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     AgentRunAuditEvent:
       type: object
       required: [eventId, runId, sequence, eventType, occurredAt, message, source]

@@ -113,6 +113,7 @@ export interface components {
             updatedAt: string;
             messages: components["schemas"]["ConversationMessage"][];
             agentRuns: components["schemas"]["AgentRun"][];
+            analysisTasks: components["schemas"]["AnalysisTask"][];
         };
         ConversationMessage: {
             messageId: string;
@@ -126,10 +127,11 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        ChatMessageCompleted: {
+        MessageProcessed: {
             userMessage: components["schemas"]["ConversationMessage"];
-            assistantMessage: components["schemas"]["ConversationMessage"];
+            assistantMessage?: components["schemas"]["ConversationMessage"];
             agentRun: components["schemas"]["AgentRun"];
+            analysisTask?: components["schemas"]["AnalysisTask"];
         };
         AgentRun: {
             runId: string;
@@ -137,9 +139,21 @@ export interface components {
             inputMessageId: string;
             /** @enum {string} */
             intentRoute: "chat" | "analysis" | "task_control" | "approval";
+            intentConfidence: number;
+            analysisTaskId?: string | null;
             /** Format: date-time */
             createdAt: string;
             auditEvents: components["schemas"]["AgentRunAuditEvent"][];
+        };
+        AnalysisTask: {
+            analysisTaskId: string;
+            conversationId: string;
+            goal: string;
+            /** @enum {string} */
+            status: "active" | "waiting_for_input" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
+            sourceAgentRunId: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         AgentRunAuditEvent: {
             eventId: string;
@@ -325,13 +339,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Persisted user Message, deterministic assistant reply, and completed chat Agent Run */
+            /** @description Persisted Message, routed Agent Run, and optional reply or Analysis Task */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatMessageCompleted"];
+                    "application/json": components["schemas"]["MessageProcessed"];
                 };
             };
             /** @description Invalid message content */

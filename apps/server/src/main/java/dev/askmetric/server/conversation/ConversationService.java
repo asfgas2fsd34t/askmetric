@@ -4,9 +4,16 @@ import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
 import dev.askmetric.server.agent.AgentRunIntentRoute;
 import dev.askmetric.server.agent.AgentRunMapper;
+import dev.askmetric.server.agent.DeterministicIntentRouter;
+import dev.askmetric.server.agent.IntentDecision;
 import dev.askmetric.server.agent.PersistedAgentRun;
+import dev.askmetric.server.analysis.AnalysisTask;
+import dev.askmetric.server.analysis.AnalysisTaskMapper;
+import dev.askmetric.server.analysis.AnalysisTaskStatus;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,14 +25,20 @@ public class ConversationService {
 
     private final ConversationMapper mapper;
     private final AgentRunMapper agentRunMapper;
+    private final AnalysisTaskMapper analysisTaskMapper;
+    private final DeterministicIntentRouter intentRouter;
     private final DeterministicChatReply deterministicChatReply;
 
     ConversationService(
             ConversationMapper mapper,
             AgentRunMapper agentRunMapper,
+            AnalysisTaskMapper analysisTaskMapper,
+            DeterministicIntentRouter intentRouter,
             DeterministicChatReply deterministicChatReply) {
         this.mapper = mapper;
         this.agentRunMapper = agentRunMapper;
+        this.analysisTaskMapper = analysisTaskMapper;
+        this.intentRouter = intentRouter;
         this.deterministicChatReply = deterministicChatReply;
     }
 
@@ -51,16 +64,18 @@ public class ConversationService {
         agentRuns.forEach(agentRun -> agentRun.setAuditEvents(
                 agentRunMapper.auditEvents(userSubject, workspaceId, agentRun.getRunId())));
         snapshot.setAgentRuns(agentRuns);
+        snapshot.setAnalysisTasks(analysisTaskMapper.tasks(userSubject, workspaceId, conversationId));
         return snapshot;
     }
 
     @Transactional
-    public ChatMessageCompleted submitChatMessage(
+    public MessageProcessed submitMessage(
             String userSubject,
             String workspaceId,
             String conversationId,
             CreateMessageRequest request) {
         String content = requiredText(request == null ? null : request.getContent(), "content", MAX_MESSAGE_LENGTH);
+        IntentDecision intent = intentRouter.route(content);
         ConversationMessage userMessage = mapper.appendMessage(
                         userSubject,
                         workspaceId,
@@ -70,17 +85,35 @@ public class ConversationService {
                         userSubject,
                         content)
                 .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
+        Optional<AnalysisTask> openTask = intent.getRoute() == AgentRunIntentRoute.ANALYSIS
+                ? analysisTaskMapper.findOpen(userSubject, workspaceId, conversationId)
+                : Optional.empty();
+        BigDecimal runConfidence = openTask.isPresent() ? new BigDecimal("0.500") : intent.getConfidence();
         String runId = "run_" + UUID.randomUUID();
-        if (agentRunMapper.createChatRun(
+        if (agentRunMapper.createRun(
                         userSubject,
                         workspaceId,
                         conversationId,
                         runId,
                         userMessage.getMessageId(),
-                        AgentRunIntentRoute.CHAT)
+                        intent.getRoute(),
+                        runConfidence)
                 != 1) {
             throw new AccessDeniedException("Conversation not found in Workspace");
         }
+        if (intent.getRoute() == AgentRunIntentRoute.ANALYSIS) {
+            return createAnalysisTask(userSubject, workspaceId, conversationId, content, userMessage, runId, openTask);
+        }
+        return completeChat(userSubject, workspaceId, conversationId, content, userMessage, runId);
+    }
+
+    private MessageProcessed completeChat(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            String content,
+            ConversationMessage userMessage,
+            String runId) {
         appendAuditEvent(userSubject, workspaceId, runId, 1, AgentRunEventType.ACCEPTED, "普通聊天 Agent Run 已接受");
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS, "正在生成确定性聊天回复");
         ConversationMessage assistantMessage = mapper.appendMessage(
@@ -93,12 +126,76 @@ public class ConversationService {
                         deterministicChatReply.replyTo(content))
                 .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
         appendAuditEvent(userSubject, workspaceId, runId, 3, AgentRunEventType.COMPLETED, "普通聊天 Agent Run 已完成");
+        return new MessageProcessed(
+                userMessage,
+                assistantMessage,
+                persistedRun(userSubject, workspaceId, conversationId, runId),
+                null);
+    }
+
+    private MessageProcessed createAnalysisTask(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            String goal,
+            ConversationMessage userMessage,
+            String runId,
+            Optional<AnalysisTask> openTask) {
+        appendAuditEvent(userSubject, workspaceId, runId, 1, AgentRunEventType.ACCEPTED, "分析 Agent Run 已接受");
+        if (openTask.isPresent()) {
+            appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS,
+                    "检测到 Conversation 已有活动 Analysis Task，等待用户澄清");
+            ConversationMessage assistantMessage = mapper.appendMessage(
+                            userSubject,
+                            workspaceId,
+                            conversationId,
+                            "message_" + UUID.randomUUID(),
+                            "assistant",
+                            null,
+                            "当前 Conversation 已有活动 Analysis Task。请说明要继续当前目标，还是切换到新的分析目标。")
+                    .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
+            appendAuditEvent(userSubject, workspaceId, runId, 3, AgentRunEventType.COMPLETED, "已请求用户澄清分析目标");
+            return new MessageProcessed(
+                    userMessage,
+                    assistantMessage,
+                    persistedRun(userSubject, workspaceId, conversationId, runId),
+                    null);
+        }
+        String analysisTaskId = "analysis_task_" + UUID.randomUUID();
+        if (analysisTaskMapper.create(
+                        userSubject,
+                        workspaceId,
+                        conversationId,
+                        analysisTaskId,
+                        goal,
+                        AnalysisTaskStatus.ACTIVE,
+                        runId)
+                != 1) {
+            throw new AccessDeniedException("Conversation not found in Workspace");
+        }
+        if (agentRunMapper.linkAnalysisTask(userSubject, workspaceId, runId, analysisTaskId) != 1) {
+            throw new AccessDeniedException("Analysis Task not found in Workspace");
+        }
+        appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS, "Analysis Task 已创建");
+        AnalysisTask analysisTask = analysisTaskMapper.tasks(userSubject, workspaceId, conversationId).stream()
+                .filter(candidate -> analysisTaskId.equals(candidate.getAnalysisTaskId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Persisted Analysis Task was not found"));
+        return new MessageProcessed(
+                userMessage,
+                null,
+                persistedRun(userSubject, workspaceId, conversationId, runId),
+                analysisTask);
+    }
+
+    private PersistedAgentRun persistedRun(
+            String userSubject, String workspaceId, String conversationId, String runId) {
         PersistedAgentRun agentRun = agentRunMapper.runs(userSubject, workspaceId, conversationId).stream()
                 .filter(candidate -> runId.equals(candidate.getRunId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Persisted Agent Run was not found"));
         agentRun.setAuditEvents(agentRunMapper.auditEvents(userSubject, workspaceId, runId));
-        return new ChatMessageCompleted(userMessage, assistantMessage, agentRun);
+        return agentRun;
     }
 
     private void appendAuditEvent(

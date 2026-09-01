@@ -502,6 +502,27 @@ textarea {
   margin: 28px 0 0;
 }
 
+.context-panel h3 {
+  margin: 28px 0 0;
+  color: #303733;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.context-section {
+  margin-top: 24px;
+  padding-top: 2px;
+  border-top: 1px solid #d8ddd9;
+}
+
+.context-section h3 {
+  margin-top: 16px;
+}
+
+.context-section dl {
+  margin-top: 16px;
+}
+
 .context-panel dt {
   margin-bottom: 5px;
   color: #7b847e;

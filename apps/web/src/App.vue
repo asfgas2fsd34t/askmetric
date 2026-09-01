@@ -9,7 +9,7 @@ import {
   Send,
   UserRound,
 } from "lucide-vue-next";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { accessToken, logout } from "./auth";
 import {
@@ -31,6 +31,10 @@ const sending = ref(false);
 const error = ref("");
 const conversationError = ref("");
 const draft = ref("");
+const latestAgentRun = computed(() => activeConversation.value?.agentRuns.at(-1));
+const activeAnalysisTask = computed(() =>
+  activeConversation.value?.analysisTasks.find((task) => task.status === "active"),
+);
 
 async function refresh(requestedWorkspaceId?: string) {
   loading.value = true;
@@ -115,8 +119,16 @@ async function submitMessage() {
     const accepted = await createMessage(token, workspaceId, conversationId, content);
     activeConversation.value = {
       ...activeConversation.value,
-      messages: [...activeConversation.value.messages, accepted.userMessage, accepted.assistantMessage],
+      messages: [
+        ...activeConversation.value.messages,
+        accepted.userMessage,
+        ...(accepted.assistantMessage ? [accepted.assistantMessage] : []),
+      ],
       agentRuns: [...activeConversation.value.agentRuns, accepted.agentRun],
+      analysisTasks: [
+        ...activeConversation.value.analysisTasks,
+        ...(accepted.analysisTask ? [accepted.analysisTask] : []),
+      ],
     };
     draft.value = "";
     await refreshConversations(workspaceId, conversationId);
@@ -242,7 +254,7 @@ onMounted(() => refresh());
             <article v-for="run in activeConversation.agentRuns" :key="run.runId" class="agent-run">
               <div>
                 <strong>{{ run.auditEvents.at(-1)?.message ?? "等待 Agent 事件" }}</strong>
-                <span>{{ run.intentRoute }}</span>
+                <span>{{ run.intentRoute }} · {{ Math.round(run.intentConfidence * 100) }}%</span>
               </div>
               <ul class="agent-run-audit-events" aria-label="运行审计事件">
                 <li v-for="event in run.auditEvents" :key="event.eventId">
@@ -286,6 +298,7 @@ onMounted(() => refresh());
           <PanelRight :size="17" aria-hidden="true" />
           <h2 id="context-heading">当前上下文</h2>
         </div>
+        <h3>Conversation</h3>
         <dl>
           <div>
             <dt>工作区</dt>
@@ -300,10 +313,48 @@ onMounted(() => refresh());
             <dd>{{ session.user.username }}</dd>
           </div>
           <div v-if="activeConversation">
-            <dt>当前对话</dt>
+            <dt>标识</dt>
             <dd>{{ activeConversation.conversationId }}</dd>
           </div>
         </dl>
+        <section v-if="latestAgentRun" class="context-section" aria-labelledby="agent-run-heading">
+          <h3 id="agent-run-heading">Agent Run</h3>
+          <dl>
+            <div>
+              <dt>标识</dt>
+              <dd>{{ latestAgentRun.runId }}</dd>
+            </div>
+            <div>
+              <dt>Intent Route</dt>
+              <dd>{{ latestAgentRun.intentRoute }}</dd>
+            </div>
+            <div>
+              <dt>置信度</dt>
+              <dd>{{ Math.round(latestAgentRun.intentConfidence * 100) }}%</dd>
+            </div>
+          </dl>
+        </section>
+        <section v-if="activeAnalysisTask" class="context-section" aria-labelledby="analysis-task-heading">
+          <h3 id="analysis-task-heading">Analysis Task</h3>
+          <dl>
+            <div>
+              <dt>目标</dt>
+              <dd>{{ activeAnalysisTask.goal }}</dd>
+            </div>
+            <div>
+              <dt>状态</dt>
+              <dd>{{ activeAnalysisTask.status }}</dd>
+            </div>
+            <div>
+              <dt>标识</dt>
+              <dd>{{ activeAnalysisTask.analysisTaskId }}</dd>
+            </div>
+            <div>
+              <dt>来源 Run</dt>
+              <dd>{{ activeAnalysisTask.sourceAgentRunId }}</dd>
+            </div>
+          </dl>
+        </section>
       </aside>
     </main>
   </div>

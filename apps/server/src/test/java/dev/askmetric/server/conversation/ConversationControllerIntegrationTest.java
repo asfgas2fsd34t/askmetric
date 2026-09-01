@@ -145,6 +145,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.assistantMessage.author").value("assistant"))
                 .andExpect(jsonPath("$.assistantMessage.content").value("你好，我是 AskMetric。你可以向我询问业务指标、数据口径或分析目标。"))
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
                 .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"))
                 .andExpect(jsonPath("$.agentRun.auditEvents.length()").value(3));
 
@@ -156,6 +157,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.messages[1].author").value("assistant"))
                 .andExpect(jsonPath("$.agentRuns").isNotEmpty())
                 .andExpect(jsonPath("$.agentRuns[0].intentRoute").value("chat"))
+                .andExpect(jsonPath("$.analysisTasks").isEmpty())
                 .andExpect(jsonPath("$.agentRuns[0].auditEvents[2].eventType").value("agent.run.completed"));
     }
 
@@ -171,5 +173,70 @@ class ConversationControllerIntegrationTest {
                         "AskMetric 将业务问题转化为可审计分析，并在需要时生成独立 HTML 报告。"))
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"))
                 .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"));
+    }
+
+    @Test
+    void routesAnMrrQuestionToANewPersistedAnalysisTask() throws Exception {
+        String createdConversation = mvc.perform(post("/api/v1/conversations")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"MRR 调查\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String conversationId = objectMapper.readTree(createdConversation).get("conversationId").asText();
+
+        String accepted = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"为什么本月 MRR 下降？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userMessage.content").value("为什么本月 MRR 下降？"))
+                .andExpect(jsonPath("$.assistantMessage").doesNotExist())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.95))
+                .andExpect(jsonPath("$.analysisTask.goal").value("为什么本月 MRR 下降？"))
+                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode result = objectMapper.readTree(accepted);
+        String runId = result.at("/agentRun/runId").asText();
+        String analysisTaskId = result.at("/analysisTask/analysisTaskId").asText();
+        org.assertj.core.api.Assertions.assertThat(result.at("/analysisTask/sourceAgentRunId").asText())
+                .isEqualTo(runId);
+        org.assertj.core.api.Assertions.assertThat(result.at("/agentRun/analysisTaskId").asText())
+                .isEqualTo(analysisTaskId);
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.agentRuns[0].intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRuns[0].intentConfidence").value(0.95))
+                .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.analysisTasks[0].sourceAgentRunId").value(runId))
+                .andExpect(jsonPath("$.analysisTasks[0].goal").value("为什么本月 MRR 下降？"));
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"再分析一下 MRR 趋势\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.5))
+                .andExpect(jsonPath("$.analysisTask").doesNotExist())
+                .andExpect(jsonPath("$.assistantMessage.content").value(
+                        "当前 Conversation 已有活动 Analysis Task。请说明要继续当前目标，还是切换到新的分析目标。"));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks.length()").value(1));
     }
 }
