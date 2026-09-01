@@ -86,11 +86,11 @@ public class ConversationController {
                     Optional.ofNullable(requestedWorkspaceId),
                     conversationId,
                     WorkspacePermission.CREATE_MESSAGE);
-            ConversationMessage message = service.appendUserMessage(
+            ChatMessageCompleted message = service.submitChatMessage(
                     identity.getSubject(), access.currentWorkspaceId(), conversationId, request);
             return ResponseEntity.created(URI.create(
                             "/api/v1/conversations/%s/messages/%s"
-                                    .formatted(conversationId, message.getMessageId())))
+                                    .formatted(conversationId, message.getUserMessage().getMessageId())))
                     .body(message);
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));

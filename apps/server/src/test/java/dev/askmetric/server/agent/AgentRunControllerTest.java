@@ -33,12 +33,12 @@ class AgentRunControllerTest {
         };
         var workspaceAuthorization = mock(WorkspaceAuthorizationService.class);
         var membership = new WorkspaceAccess.Membership(
-                "membership-demo", "workspace-demo", "Demo Workspace", Set.of(WorkspacePermission.CREATE_AGENT_RUN));
+                "membership-demo", "workspace-demo", "Demo Workspace", Set.of(WorkspacePermission.CREATE_MESSAGE));
         when(workspaceAuthorization.authorizeConversation(any(), any(), any(), any()))
                 .thenReturn(new WorkspaceAccess(
                         membership,
                         List.of(membership),
-                        new WorkspaceAccess.Policy(1, false, Set.of(WorkspacePermission.CREATE_AGENT_RUN))));
+                        new WorkspaceAccess.Policy(1, false, Set.of(WorkspacePermission.CREATE_MESSAGE))));
         var controller = new AgentRunController(new AgentRunService(store, gateway), workspaceAuthorization);
         var identity = Jwt.withTokenValue("token").header("alg", "none").subject("user-1").build();
 

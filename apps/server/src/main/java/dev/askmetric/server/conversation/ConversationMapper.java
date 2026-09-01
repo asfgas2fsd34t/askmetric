@@ -88,15 +88,17 @@ interface ConversationMapper {
             insert into conversation_message (
                 message_id, conversation_id, author, author_subject, sequence, content
             )
-            select #{messageId}, #{conversationId}, 'user', #{userSubject}, allocated.sequence, #{content}
+            select #{messageId}, #{conversationId}, #{author}, #{authorSubject,jdbcType=VARCHAR}, allocated.sequence, #{content}
             from allocated
             returning message_id, conversation_id, author, author_subject, sequence, content, created_at
             """)
-    Optional<ConversationMessage> appendUserMessage(
+    Optional<ConversationMessage> appendMessage(
             String userSubject,
             String workspaceId,
             String conversationId,
             String messageId,
+            String author,
+            String authorSubject,
             String content);
 
     @ResultMap("conversationMessage")

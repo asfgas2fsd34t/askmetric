@@ -112,6 +112,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             messages: components["schemas"]["ConversationMessage"][];
+            agentRuns: components["schemas"]["AgentRun"][];
         };
         ConversationMessage: {
             messageId: string;
@@ -124,6 +125,34 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
+        };
+        ChatMessageCompleted: {
+            userMessage: components["schemas"]["ConversationMessage"];
+            assistantMessage: components["schemas"]["ConversationMessage"];
+            agentRun: components["schemas"]["AgentRun"];
+        };
+        AgentRun: {
+            runId: string;
+            conversationId: string;
+            inputMessageId: string;
+            /** @enum {string} */
+            intentRoute: "chat" | "analysis" | "task_control" | "approval";
+            /** Format: date-time */
+            createdAt: string;
+            auditEvents: components["schemas"]["AgentRunAuditEvent"][];
+        };
+        AgentRunAuditEvent: {
+            eventId: string;
+            runId: string;
+            /** Format: int64 */
+            sequence: number;
+            /** @enum {string} */
+            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.completed" | "agent.run.failed";
+            /** Format: date-time */
+            occurredAt: string;
+            message: string;
+            /** @enum {string} */
+            source: "java" | "python";
         };
         CreateConversationRequest: {
             title: string;
@@ -296,13 +325,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Persisted Message */
+            /** @description Persisted user Message, deterministic assistant reply, and completed chat Agent Run */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationMessage"];
+                    "application/json": components["schemas"]["ChatMessageCompleted"];
                 };
             };
             /** @description Invalid message content */
