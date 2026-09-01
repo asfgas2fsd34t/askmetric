@@ -32,17 +32,35 @@ describe("Conversation persistence client", () => {
   it("submits a user Message to its Conversation", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        messageId: "message-2",
-        conversationId: "conversation-1",
-        author: "user",
-        sequence: 2,
-        content: "Use calendar month",
-        createdAt: "2026-08-31T12:00:00Z",
+        userMessage: {
+          messageId: "message-2",
+          conversationId: "conversation-1",
+          author: "user",
+          sequence: 2,
+          content: "Use calendar month",
+          createdAt: "2026-08-31T12:00:00Z",
+        },
+        assistantMessage: {
+          messageId: "message-3",
+          conversationId: "conversation-1",
+          author: "assistant",
+          sequence: 3,
+          content: "我是 AskMetric。你可以描述业务问题、指标口径或希望调查的分析目标。",
+          createdAt: "2026-08-31T12:00:01Z",
+        },
+        agentRun: {
+          runId: "run-1",
+          conversationId: "conversation-1",
+          inputMessageId: "message-2",
+          intentRoute: "chat",
+          createdAt: "2026-08-31T12:00:00Z",
+          auditEvents: [],
+        },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const message = await createMessage(
+    const accepted = await createMessage(
       "token",
       "workspace-demo",
       "conversation-1",
@@ -52,7 +70,8 @@ describe("Conversation persistence client", () => {
     const submitted = request(fetchMock, 0);
     expect(submitted.method).toBe("POST");
     expect(await submitted.json()).toEqual({ content: "Use calendar month" });
-    expect(message.sequence).toBe(2);
+    expect(accepted.userMessage.sequence).toBe(2);
+    expect(accepted.agentRun.intentRoute).toBe("chat");
   });
 });
 

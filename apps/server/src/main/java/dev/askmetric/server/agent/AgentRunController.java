@@ -48,7 +48,7 @@ public class AgentRunController {
                             identity,
                             Optional.ofNullable(requestedWorkspaceId),
                             conversationId,
-                            WorkspacePermission.CREATE_AGENT_RUN)
+                            WorkspacePermission.CREATE_MESSAGE)
                     .currentWorkspaceId();
             return ResponseEntity.accepted().body(service.submit(workspaceId, conversationId, submission));
         } catch (IllegalArgumentException exception) {

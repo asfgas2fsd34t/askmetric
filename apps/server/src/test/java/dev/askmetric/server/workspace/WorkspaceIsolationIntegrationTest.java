@@ -99,22 +99,20 @@ class WorkspaceIsolationIntegrationTest {
     }
 
     @Test
-    void workspaceMembershipAndWorkspacePolicyAuthorizeAgentRunCreation() {
+    void workspaceMembershipAndWorkspacePolicyAuthorizeMessageSubmission() {
         Jwt alice = identity("00000000-0000-0000-0000-000000000001");
-        Jwt bob = identity("00000000-0000-0000-0000-000000000002");
 
         WorkspaceAccess access = authorization.authorize(
-                alice, Optional.of("workspace-demo"), WorkspacePermission.CREATE_AGENT_RUN);
+                alice, Optional.of("workspace-demo"), WorkspacePermission.CREATE_MESSAGE);
 
         assertThat(access.currentWorkspaceId()).isEqualTo("workspace-demo");
+        assertThat(authorization.authorize(
+                        alice, Optional.of("workspace-growth"), WorkspacePermission.CREATE_MESSAGE)
+                .currentWorkspaceId()).isEqualTo("workspace-growth");
         assertThatThrownBy(() -> authorization.authorize(
-                        alice, Optional.of("workspace-growth"), WorkspacePermission.CREATE_AGENT_RUN))
+                        alice, Optional.of("workspace-finance"), WorkspacePermission.CREATE_MESSAGE))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("Workspace Membership does not grant CREATE_AGENT_RUN");
-        assertThatThrownBy(() -> authorization.authorize(
-                        bob, Optional.of("workspace-finance"), WorkspacePermission.CREATE_AGENT_RUN))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("Workspace Policy does not allow CREATE_AGENT_RUN");
+                .hasMessage("Workspace Membership not found");
     }
 
     @Test

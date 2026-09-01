@@ -10,7 +10,7 @@
 
 交付 AskMetric 的 A 方案「三栏协作台」作为首版 chat-first 工作区。对话区是主要工作面，左侧提供 Conversation 导航，右侧展示当前分析上下文、任务阶段、证据、发现和审批提案。
 
-每条用户消息都创建一次 Agent Run。Agent 通过意图路由判断这次运行是普通对话、分析、任务控制还是审批，并记录它与 Analysis Task 的关系。普通问候只产生对话回复，不创建 Analysis Task；需要分析时才创建或继续一个持久任务。一个 Conversation 可以包含多个 Analysis Task，但同一时刻最多有一个活动任务。
+每条用户消息都创建一次 Agent Run。Agent 通过意图路由判断这次运行是普通对话、分析、任务控制还是审批。普通问候只产生对话回复，不创建 Analysis Task；需要分析时才创建或继续一个持久任务。一个 Conversation 可以包含多个 Analysis Task，但同一时刻最多有一个活动任务。
 
 分析任务由 Python LangGraph Runtime 推进，但 Java 是业务状态、权限、审批、证据快照、报告和审计记录的唯一事实来源。Java 通过 Transactional Outbox 和 RocketMQ 5 投递 Agent 工作，Python 通过版本化事件返回进度和结果。Python 永远不能直接访问数据源凭据或执行副作用。
 
@@ -26,7 +26,7 @@
 6. As a 业务用户, I want to 看到当前 Conversation 是否有活动任务, so that 我不会误以为普通对话正在运行分析。
 7. As a 业务用户, I want to 输入“为什么本月 MRR 下降”这类分析问题, so that 系统能创建一个有明确目标的 Analysis Task。
 8. As a 业务用户, I want to 看到本次消息被路由为 chat、analysis、task_control 或 approval, so that 我能理解系统如何解释我的意图。
-9. As a 业务用户, I want to 在低置信度或关系冲突时被询问, so that 系统不会静默猜测错误的任务关系。
+9. As a 业务用户, I want to 在低置信度或任务目标冲突时被询问, so that 系统不会静默猜测错误的分析目标。
 10. As a 业务用户, I want to 看到当前任务的目标、状态、标识和已完成运行数量, so that 我可以判断分析是否仍在推进。
 11. As a 业务用户, I want to 看到分析阶段按“理解问题、检索口径、执行查询、验证证据、生成报告”推进, so that 复杂分析过程是可观察的。
 12. As a 业务用户, I want to 在指标定义存在歧义时确认口径, so that MRR 等指标的结论建立在共同认可的定义上。
@@ -67,9 +67,9 @@
 
 - A 方案「三栏协作台」是首版主交互。左侧是 Conversation 导航，中间是消息和输入区，右侧是分析上下文。B「报告优先画布」和 C「任务时间线」保留在原型中作为交互对比，不作为首版生产页面。
 - Conversation 是用户可见消息线程，可以包含零个或多个 Analysis Task。Analysis Task 表示一个持久分析目标，不能被 Message 或 Agent Run 替代。同一 Conversation 最多一个活动任务，不同 Conversation 可以并行运行。
-- 每条用户 Message 创建一个 Agent Run。Agent Run 必须持久化意图路由、任务关系、输入、状态、时间和错误。普通对话的 taskRelation 为 `none`，新分析为 `new`，同一目标的后续消息为 `continue`，切换目标为 `switch`。
+- 每条用户 Message 创建一个 Agent Run。Agent Run 必须持久化意图路由、输入、时间和按序审计事件；运行结果由事件流推导，不保存重复的状态快照。T08 引入 Analysis Task 后，Run 通过 `analysisTaskId` 记录实际任务关联；任务创建、继续或切换由该关联及任务事件推导。
 - Intent Route 的一级类型为 `chat`、`analysis`、`task_control` 和 `approval`。明确命令使用确定性规则；低置信度或关系冲突必须转为澄清，不允许静默创建或切换任务。
-- Analysis Task 的首版状态为 `active`、`waiting_for_input`、`waiting_for_approval`、`completed`、`failed` 和 `cancelled`。Agent Run 的首版状态为 `queued`、`running`、`completed`、`failed` 和 `cancelled`。状态转换必须由 Java 持久化并拒绝非法转换。
+- Analysis Task 的首版状态为 `active`、`waiting_for_input`、`waiting_for_approval`、`completed`、`failed` 和 `cancelled`。Agent Run 的进度和结果由 Java 持久化的有序事件表达，并拒绝非法事件流转。
 - A 方案的交互状态来自原型：`idle -> clarification -> planning -> retrieving -> querying -> synthesizing -> approval -> completed|cancelled|failed`。`approval` 只表示等待确切提案的人工决定，不表示 Agent 可以自行执行。
 - Java Spring Boot 模块化单体拥有 User、Workspace Membership、Workspace Policy、Conversation、Message、Agent Run、Analysis Task、Approval、Report、Audit Record、Data Connection、Metric Definition、Evidence Snapshot 等业务状态。
 - Python LangGraph Runtime 只拥有 Checkpoint、临时 Context Pack、派生 RAG 索引和评测执行状态。Python 不读写 Java 业务表，不接收 Data Connection Secret，不直接连接分析数据源，不执行副作用。

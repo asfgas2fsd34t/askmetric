@@ -57,10 +57,10 @@ class ConversationControllerIntegrationTest {
         String response = mvc.perform(post("/api/v1/conversations")
                         .header("X-Workspace-Id", "workspace-demo")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"title\":\"MRR investigation\"}")
+                        .content("{\"title\":\"产品咨询\"}")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.title").value("MRR investigation"))
+                .andExpect(jsonPath("$.title").value("产品咨询"))
                 .andExpect(jsonPath("$.messages").isEmpty())
                 .andReturn()
                 .getResponse()
@@ -71,21 +71,26 @@ class ConversationControllerIntegrationTest {
         mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"  Why did MRR fall?  \"}")
+                        .content("{\"content\":\"  AskMetric 是什么？  \"}")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.author").value("user"))
-                .andExpect(jsonPath("$.sequence").value(1))
-                .andExpect(jsonPath("$.content").value("Why did MRR fall?"))
-                .andExpect(jsonPath("$.createdAt").isNotEmpty());
+                .andExpect(jsonPath("$.userMessage.author").value("user"))
+                .andExpect(jsonPath("$.userMessage.sequence").value(1))
+                .andExpect(jsonPath("$.userMessage.content").value("AskMetric 是什么？"))
+                .andExpect(jsonPath("$.assistantMessage.author").value("assistant"))
+                .andExpect(jsonPath("$.assistantMessage.sequence").value(2))
+                .andExpect(jsonPath("$.assistantMessage.content").value(
+                        "AskMetric 将业务问题转化为可审计分析，并在需要时生成独立 HTML 报告。"))
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"));
 
         mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Use the calendar month\"}")
+                        .content("{\"content\":\"你能做什么？\"}")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.sequence").value(2));
+                .andExpect(jsonPath("$.userMessage.sequence").value(3))
+                .andExpect(jsonPath("$.assistantMessage.sequence").value(4));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
@@ -96,8 +101,11 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.messages[0].author").value("user"))
                 .andExpect(jsonPath("$.messages[0].authorSubject").value(ALICE))
                 .andExpect(jsonPath("$.messages[0].sequence").value(1))
-                .andExpect(jsonPath("$.messages[1].sequence").value(2))
-                .andExpect(jsonPath("$.messages[1].content").value("Use the calendar month"));
+                .andExpect(jsonPath("$.messages[1].author").value("assistant"))
+                .andExpect(jsonPath("$.messages[2].sequence").value(3))
+                .andExpect(jsonPath("$.messages[2].content").value("你能做什么？"))
+                .andExpect(jsonPath("$.messages[3].author").value("assistant"))
+                .andExpect(jsonPath("$.agentRuns.length()").value(2));
 
         mvc.perform(get("/api/v1/conversations")
                         .header("X-Workspace-Id", "workspace-demo")
@@ -112,5 +120,56 @@ class ConversationControllerIntegrationTest {
                         .header("X-Workspace-Id", "workspace-growth")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void startsAnAgentRunWhenTheMembershipCanCreateAMessage() throws Exception {
+        mvc.perform(post("/api/v1/conversations/conversation-growth/messages")
+                        .header("X-Workspace-Id", "workspace-growth")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"));
+    }
+
+    @Test
+    void completesAGreetingAsChatWithoutCreatingAnAnalysisTask() throws Exception {
+        mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userMessage.author").value("user"))
+                .andExpect(jsonPath("$.assistantMessage.author").value("assistant"))
+                .andExpect(jsonPath("$.assistantMessage.content").value("你好，我是 AskMetric。你可以向我询问业务指标、数据口径或分析目标。"))
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"))
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"))
+                .andExpect(jsonPath("$.agentRun.auditEvents.length()").value(3));
+
+        mvc.perform(get("/api/v1/conversations/conversation-demo")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages[0].author").value("user"))
+                .andExpect(jsonPath("$.messages[1].author").value("assistant"))
+                .andExpect(jsonPath("$.agentRuns").isNotEmpty())
+                .andExpect(jsonPath("$.agentRuns[0].intentRoute").value("chat"))
+                .andExpect(jsonPath("$.agentRuns[0].auditEvents[2].eventType").value("agent.run.completed"));
+    }
+
+    @Test
+    void completesAProductQuestionAsChatWithoutCreatingAnAnalysisTask() throws Exception {
+        mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你是谁？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assistantMessage.content").value(
+                        "AskMetric 将业务问题转化为可审计分析，并在需要时生成独立 HTML 报告。"))
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("chat"))
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"));
     }
 }

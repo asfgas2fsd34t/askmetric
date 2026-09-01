@@ -86,7 +86,7 @@ Java 服务是一个 Spring Boot 模块化单体。Spring Modulith 校验以下�
 
 每条用户消息都会创建一次 Agent 运行。Agent 运行可以仅处理对话而不关联分析任务，因此问候和产品帮助不会产生虚假任务。
 
-意图路由将本次运行分类为 `chat`、`analysis`、`task_control` 或 `approval`，并标记它与任务的关系：`none`、`new`、`continue` 或 `switch`。明确命令使用确定性规则，不调用模型分类。遇到低置信度或关系冲突时必须询问用户，不能静默猜测。
+意图路由将本次运行分类为 `chat`、`analysis`、`task_control` 或 `approval`。明确命令使用确定性规则，不调用模型分类。遇到低置信度或任务目标冲突时必须询问用户，不能静默猜测。T08 引入 Analysis Task 后，Agent Run 通过 `analysisTaskId` 记录实际任务关联；任务创建、继续或切换由该关联及任务事件推导。
 
 一个对话可以包含零个或多个分析任务。每个任务只表示一个持久分析目标，可以跨越多条消息和多次 Agent 运行。同一对话最多有一个活动任务，不同对话可以并行运行。
 
@@ -97,14 +97,14 @@ Java 服务是一个 Spring Boot 模块化单体。Spring Modulith 校验以下�
                          |
                          +-------> completed | failed | cancelled
 
-Agent 运行：queued -> running -> completed | failed | cancelled
+Agent 运行事件：accepted -> progress -> completed | failed
 ```
 
 ## Agent 工作流
 
 Python Runtime 使用一个有边界的 LangGraph 状态图：
 
-1. 对消息及其任务关系进行分类；
+1. 对消息进行意图分类，并决定是否需要创建或关联 Analysis Task；
 2. 澄清存在歧义的目标或指标；
 3. 生成显式分析计划；
 4. 组装受预算约束的上下文包；

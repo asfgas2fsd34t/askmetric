@@ -1,5 +1,6 @@
 package dev.askmetric.server.conversation;
 
+import dev.askmetric.server.agent.PersistedAgentRun;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,4 +16,6 @@ public class ConversationSnapshot {
     private Instant createdAt;
     private Instant updatedAt;
     private List<ConversationMessage> messages = new ArrayList<>();
+    /** Conversation 内已持久化的 Agent Run。 */
+    private List<PersistedAgentRun> agentRuns = new ArrayList<>();
 }

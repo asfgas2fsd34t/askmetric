@@ -104,11 +104,11 @@ paths:
               $ref: "#/components/schemas/CreateMessageRequest"
       responses:
         "201":
-          description: Persisted Message
+          description: Persisted user Message, deterministic assistant reply, and completed chat Agent Run
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConversationMessage"
+                $ref: "#/components/schemas/ChatMessageCompleted"
         "400":
           description: Invalid message content
         "403":
@@ -186,7 +186,7 @@ components:
           format: date-time
     ConversationSnapshot:
       type: object
-      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages]
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns]
       properties:
         conversationId:
           type: string
@@ -204,6 +204,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConversationMessage"
+        agentRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRun"
     ConversationMessage:
       type: object
       required: [messageId, conversationId, author, sequence, content, createdAt]
@@ -225,6 +229,58 @@ components:
         createdAt:
           type: string
           format: date-time
+    ChatMessageCompleted:
+      type: object
+      required: [userMessage, assistantMessage, agentRun]
+      properties:
+        userMessage:
+          $ref: "#/components/schemas/ConversationMessage"
+        assistantMessage:
+          $ref: "#/components/schemas/ConversationMessage"
+        agentRun:
+          $ref: "#/components/schemas/AgentRun"
+    AgentRun:
+      type: object
+      required: [runId, conversationId, inputMessageId, intentRoute, createdAt, auditEvents]
+      properties:
+        runId:
+          type: string
+        conversationId:
+          type: string
+        inputMessageId:
+          type: string
+        intentRoute:
+          type: string
+          enum: [chat, analysis, task_control, approval]
+        createdAt:
+          type: string
+          format: date-time
+        auditEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRunAuditEvent"
+    AgentRunAuditEvent:
+      type: object
+      required: [eventId, runId, sequence, eventType, occurredAt, message, source]
+      properties:
+        eventId:
+          type: string
+        runId:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        eventType:
+          type: string
+          enum: [agent.run.accepted, agent.run.progress, agent.run.completed, agent.run.failed]
+        occurredAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+        source:
+          type: string
+          enum: [java, python]
     CreateConversationRequest:
       type: object
       required: [title]

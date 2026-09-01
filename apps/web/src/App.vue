@@ -112,7 +112,12 @@ async function submitMessage() {
     const token = await accessToken();
     const workspaceId = session.value.currentMembership.workspaceId;
     const conversationId = activeConversation.value.conversationId;
-    await createMessage(token, workspaceId, conversationId, content);
+    const accepted = await createMessage(token, workspaceId, conversationId, content);
+    activeConversation.value = {
+      ...activeConversation.value,
+      messages: [...activeConversation.value.messages, accepted.userMessage, accepted.assistantMessage],
+      agentRuns: [...activeConversation.value.agentRuns, accepted.agentRun],
+    };
     draft.value = "";
     await refreshConversations(workspaceId, conversationId);
   } catch {
@@ -232,6 +237,20 @@ onMounted(() => refresh());
               <time :datetime="message.createdAt">{{ new Date(message.createdAt).toLocaleTimeString() }}</time>
             </article>
             <div v-if="activeConversation.messages.length === 0" class="empty-list">暂无消息</div>
+          </div>
+          <div v-if="activeConversation.agentRuns.length" class="agent-run-timeline" aria-label="Agent 运行记录">
+            <article v-for="run in activeConversation.agentRuns" :key="run.runId" class="agent-run">
+              <div>
+                <strong>{{ run.auditEvents.at(-1)?.message ?? "等待 Agent 事件" }}</strong>
+                <span>{{ run.intentRoute }}</span>
+              </div>
+              <ul class="agent-run-audit-events" aria-label="运行审计事件">
+                <li v-for="event in run.auditEvents" :key="event.eventId">
+                  <span>{{ event.eventType }}</span>
+                  <small>{{ event.message }}</small>
+                </li>
+              </ul>
+            </article>
           </div>
           <form class="message-composer" @submit.prevent="submitMessage">
             <label class="sr-only" for="message-draft">消息</label>
