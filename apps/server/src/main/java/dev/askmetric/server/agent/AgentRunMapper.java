@@ -12,17 +12,17 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface AgentRunMapper {
     /**
-     * 为已授权用户在 Conversation 中创建普通聊天运行。
+     * 为已授权用户在 Conversation 中创建运行。
      *
      * @return 插入行数；零表示 Conversation 不属于当前用户的 Workspace
      */
     @Insert("""
             insert into agent_run (
                 run_id, workspace_id, conversation_id, input_message_id,
-                intent_route
+                intent_route, intent_confidence
             )
             select #{runId}, conversation.workspace_id, conversation.conversation_id, #{inputMessageId},
-                   #{intentRoute}
+                   #{intentRoute}, #{intentConfidence}
             from conversation
             join workspace_membership membership
               on membership.workspace_id = conversation.workspace_id
@@ -30,13 +30,37 @@ public interface AgentRunMapper {
               and conversation.workspace_id = #{workspaceId}
               and membership.user_subject = #{userSubject}
             """)
-    int createChatRun(
+    int createRun(
             @Param("userSubject") String userSubject,
             @Param("workspaceId") String workspaceId,
             @Param("conversationId") String conversationId,
             @Param("runId") String runId,
             @Param("inputMessageId") String inputMessageId,
-            @Param("intentRoute") AgentRunIntentRoute intentRoute);
+            @Param("intentRoute") AgentRunIntentRoute intentRoute,
+            @Param("intentConfidence") java.math.BigDecimal intentConfidence);
+
+    /** 将 Analysis Task 关联到创建它的 Agent Run。 */
+    @org.apache.ibatis.annotations.Update("""
+            update agent_run run
+            set analysis_task_id = #{analysisTaskId}
+            where run.run_id = #{runId}
+              and run.workspace_id = #{workspaceId}
+              and exists (
+                  select 1
+                  from analysis_task task
+                  join workspace_membership membership on membership.workspace_id = task.workspace_id
+                  where task.analysis_task_id = #{analysisTaskId}
+                    and task.source_agent_run_id = run.run_id
+                    and task.workspace_id = run.workspace_id
+                    and task.conversation_id = run.conversation_id
+                    and membership.user_subject = #{userSubject}
+              )
+            """)
+    int linkAnalysisTask(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("runId") String runId,
+            @Param("analysisTaskId") String analysisTaskId);
 
     /** 追加一条不可变的 Agent Run 审计事件。 */
     @Insert("""
@@ -66,11 +90,14 @@ public interface AgentRunMapper {
             @Result(column = "conversation_id", property = "conversationId"),
             @Result(column = "input_message_id", property = "inputMessageId"),
             @Result(column = "intent_route", property = "intentRoute"),
+            @Result(column = "intent_confidence", property = "intentConfidence"),
+            @Result(column = "analysis_task_id", property = "analysisTaskId"),
             @Result(column = "created_at", property = "createdAt")
     })
     @Select("""
             select run.run_id, run.conversation_id, run.input_message_id,
-                   run.intent_route, run.created_at
+                   run.intent_route, run.intent_confidence, run.analysis_task_id,
+                   run.created_at
             from agent_run run
             join workspace_membership membership on membership.workspace_id = run.workspace_id
             where run.conversation_id = #{conversationId}

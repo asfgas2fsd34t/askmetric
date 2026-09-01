@@ -5,7 +5,7 @@ import type { components, paths } from "./generated/api";
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationSnapshot = components["schemas"]["ConversationSnapshot"];
 export type ConversationMessage = components["schemas"]["ConversationMessage"];
-export type ChatMessageCompleted = components["schemas"]["ChatMessageCompleted"];
+export type MessageProcessed = components["schemas"]["MessageProcessed"];
 
 function client() {
   return createClient<paths>({ baseUrl: globalThis.location?.origin ?? "http://localhost" });
@@ -59,7 +59,7 @@ export async function createMessage(
   workspaceId: string,
   conversationId: string,
   content: string,
-): Promise<ChatMessageCompleted> {
+): Promise<MessageProcessed> {
   const { data, response } = await client().POST("/api/v1/conversations/{conversationId}/messages", {
     headers: headers(accessToken),
     params: {

@@ -771,10 +771,10 @@
       });
     }
 
-    function startRun(intent, relation, text) {
-      const run = { id: `run_${String(state.runs.length + 1).padStart(2, '0')}`, intent, taskRelation: relation, status: 'completed', input: text };
+    function startRun(intent, text) {
+      const run = { id: `run_${String(state.runs.length + 1).padStart(2, '0')}`, intent, status: 'completed', input: text };
       state.runs.push(run);
-      addEvent('system', `Intent Route: ${intent}`, `${relation} · confidence ${intent === 'analysis' ? '0.94' : '0.99'}`);
+      addEvent('system', `Intent Route: ${intent}`, `confidence ${intent === 'analysis' ? '0.94' : '0.99'}`);
       return run;
     }
 
@@ -785,12 +785,11 @@
       const isGreeting = /^(你好|嗨|hello|你是谁)/i.test(clean);
       const isAnalysis = /(MRR|收入|下降|流失|指标|为什么)/i.test(clean);
       if (isGreeting && !isAnalysis) {
-        startRun('chat', 'none', clean);
+        startRun('chat', clean);
         addMessage('assistant', '我是 AskMetric，负责把业务问题转化为有证据、可审计的分析。普通对话会记录 Agent Run，但不会创建 Analysis Task。');
         addEvent('assistant', 'Chat response', 'No Analysis Task created');
       } else if (isAnalysis) {
-        const relation = state.activeTask ? 'continue' : 'new';
-        startRun('analysis', relation, clean);
+        startRun('analysis', clean);
         if (!state.activeTask) {
           state.activeTask = { id: 'task_0827_mrr', objective: '解释本月 MRR 下降原因', status: 'waiting_for_input' };
           addEvent('system', 'Analysis Task 已创建', 'task_0827_mrr');

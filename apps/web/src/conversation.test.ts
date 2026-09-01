@@ -73,6 +73,45 @@ describe("Conversation persistence client", () => {
     expect(accepted.userMessage.sequence).toBe(2);
     expect(accepted.agentRun.intentRoute).toBe("chat");
   });
+
+  it("returns the new Analysis Task for an MRR question", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        userMessage: {
+          messageId: "message-4",
+          conversationId: "conversation-1",
+          author: "user",
+          sequence: 4,
+          content: "Why did MRR fall?",
+          createdAt: "2026-09-01T12:00:00Z",
+        },
+        agentRun: {
+          runId: "run-2",
+          conversationId: "conversation-1",
+          inputMessageId: "message-4",
+          intentRoute: "analysis",
+          intentConfidence: 0.95,
+          analysisTaskId: "analysis-task-1",
+          createdAt: "2026-09-01T12:00:00Z",
+          auditEvents: [],
+        },
+        analysisTask: {
+          analysisTaskId: "analysis-task-1",
+          conversationId: "conversation-1",
+          goal: "Why did MRR fall?",
+          status: "active",
+          sourceAgentRunId: "run-2",
+          createdAt: "2026-09-01T12:00:00Z",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const accepted = await createMessage("token", "workspace-demo", "conversation-1", "Why did MRR fall?");
+
+    expect(accepted.agentRun.intentRoute).toBe("analysis");
+    expect(accepted.analysisTask?.sourceAgentRunId).toBe("run-2");
+  });
 });
 
 function jsonResponse(value: unknown) {

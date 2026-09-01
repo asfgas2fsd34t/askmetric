@@ -1,5 +1,6 @@
 package dev.askmetric.server.agent;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,10 @@ public class PersistedAgentRun {
     private String inputMessageId;
     /** 对用户 Message 的已记录意图解释。 */
     private AgentRunIntentRoute intentRoute;
+    /** 意图路由的确定性置信度。 */
+    private BigDecimal intentConfidence;
+    /** 实际关联的 Analysis Task；普通聊天为空。 */
+    private String analysisTaskId;
     /** 创建时间。 */
     private Instant createdAt;
     /** 按序持久化的运行审计事件。 */

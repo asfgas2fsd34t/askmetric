@@ -86,7 +86,7 @@ public class ConversationController {
                     Optional.ofNullable(requestedWorkspaceId),
                     conversationId,
                     WorkspacePermission.CREATE_MESSAGE);
-            ChatMessageCompleted message = service.submitChatMessage(
+            MessageProcessed message = service.submitMessage(
                     identity.getSubject(), access.currentWorkspaceId(), conversationId, request);
             return ResponseEntity.created(URI.create(
                             "/api/v1/conversations/%s/messages/%s"
