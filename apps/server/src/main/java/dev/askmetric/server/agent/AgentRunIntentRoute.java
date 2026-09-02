@@ -1,5 +1,6 @@
 package dev.askmetric.server.agent;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
@@ -42,5 +43,16 @@ public enum AgentRunIntentRoute {
     @JsonValue
     public String wireValue() {
         return wireValue;
+    }
+
+    /** 将 API 或幂等响应中的稳定路由值转换回枚举。 */
+    @JsonCreator
+    public static AgentRunIntentRoute fromWireValue(String wireValue) {
+        for (AgentRunIntentRoute route : values()) {
+            if (route.wireValue.equals(wireValue)) {
+                return route;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported Agent Run intent route: " + wireValue);
     }
 }

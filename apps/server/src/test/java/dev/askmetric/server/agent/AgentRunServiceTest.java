@@ -2,90 +2,36 @@ package dev.askmetric.server.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class AgentRunServiceTest {
     @Test
-    void submitsTrimmedMessageAndCreatesQueuedEventBeforePublishing() {
+    void persistsPythonEventsBeforeBuildingAnSseProjection() {
+        var mapper = mock(AgentRunMapper.class);
         var store = new AgentRunStore();
-        var published = new AtomicReference<AgentRunRequest>();
-        var gateway = new RocketMqGateway() {
-            @Override
-            public void publish(AgentRunRequest request) {
-                published.set(request);
-            }
+        var event = new AgentRunEvent(
+                "evt-progress", 1, AgentRunEventType.PROGRESS, 2,
+                Instant.parse("2026-08-28T02:00:01Z"), "conversation-1", "run-1",
+                "running", AgentRunEventSource.PYTHON);
+        when(mapper.appendExternalEvent(
+                event.getEventId(), event.getRunId(), event.getSequence(), event.getEventType(),
+                event.getOccurredAt(), event.getConversationId(), event.getMessage(), event.getSource()))
+                .thenReturn(1);
+        when(mapper.workspaceId(event.getConversationId(), event.getRunId()))
+                .thenReturn(Optional.of("workspace-demo"));
+        when(mapper.eventsForRun(event.getConversationId(), event.getRunId())).thenReturn(java.util.List.of(event));
 
-            @Override
-            public void close() {
-            }
-        };
+        new AgentRunService(store, mapper).acceptEvent(event);
 
-        var accepted = new AgentRunService(store, gateway)
-                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("  hello  "));
-
-        assertThat(published.get()).isNotNull();
-        assertThat(published.get().getMessage()).isEqualTo("hello");
-        assertThat(store.snapshot(accepted.getRunId()))
-                .extracting(AgentRunEvent::getEventType)
-                .containsExactly(AgentRunEventType.ACCEPTED);
-    }
-
-    @Test
-    void onlyReplaysARunWithinItsOwningConversation() {
-        var store = new AgentRunStore();
-        var gateway = new RocketMqGateway() {
-            @Override
-            public void publish(AgentRunRequest request) {
-            }
-
-            @Override
-            public void close() {
-            }
-        };
-
-        var accepted = new AgentRunService(store, gateway)
-                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("hello"));
-
-        assertThat(new AgentRunService(store, gateway)
-                .exists("workspace-demo", "conversation-1", accepted.getRunId())).isTrue();
-        assertThat(new AgentRunService(store, gateway)
-                .exists("workspace-growth", "conversation-1", accepted.getRunId())).isFalse();
-        assertThat(new AgentRunService(store, gateway)
-                .exists("workspace-demo", "conversation-2", accepted.getRunId())).isFalse();
-    }
-
-    @Test
-    void recordsAFailedTerminalEventWhenPublishingCannotStart() {
-        var store = new AgentRunStore();
-        var published = new AtomicReference<AgentRunRequest>();
-        var gateway = new RocketMqGateway() {
-            @Override
-            public void publish(AgentRunRequest request) {
-                published.set(request);
-                throw new IllegalStateException("broker unavailable");
-            }
-
-            @Override
-            public void close() {
-            }
-        };
-
-        var thrown = catchThrowable(() -> new AgentRunService(store, gateway)
-                .submit("workspace-demo", "conversation-1", new AgentRunSubmission("hello")));
-        assertThat(thrown)
-                .isInstanceOf(AgentRunPublishException.class)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("broker unavailable");
-        assertThat(((AgentRunPublishException) thrown).accepted())
-                .extracting(AgentRunAccepted::getRunId)
-                .isEqualTo(published.get().getRunId());
-        assertThat(store.snapshot(published.get().getRunId()))
-                .extracting(AgentRunEvent::getEventType)
-                .containsExactly(AgentRunEventType.ACCEPTED, AgentRunEventType.FAILED);
+        verify(mapper).appendExternalEvent(
+                event.getEventId(), event.getRunId(), event.getSequence(), event.getEventType(),
+                event.getOccurredAt(), event.getConversationId(), event.getMessage(), event.getSource());
     }
 
     @Test
@@ -109,6 +55,37 @@ class AgentRunServiceTest {
         assertThat(store.append(progress)).isTrue();
         assertThat(store.append(redeliveredProgress)).isFalse();
         assertThat(store.snapshot("run-1")).containsExactly(accepted, progress);
+    }
+
+    @Test
+    void ignoresAnEventRedeliveredWithTheSameEventId() {
+        var store = new AgentRunStore();
+        store.create("run-1", "workspace-demo", "conversation-1");
+        var accepted = new AgentRunEvent(
+                "evt-accepted", 1, AgentRunEventType.ACCEPTED, 1,
+                Instant.parse("2026-08-28T02:00:00Z"), "conversation-1", "run-1",
+                "queued", AgentRunEventSource.JAVA);
+
+        assertThat(store.append(accepted)).isTrue();
+        assertThat(store.append(accepted)).isFalse();
+        assertThat(store.snapshot("run-1")).containsExactly(accepted);
+    }
+
+    @Test
+    void rejectsAnEventThatSkipsASequenceNumber() {
+        var store = new AgentRunStore();
+        store.create("run-1", "workspace-demo", "conversation-1");
+        store.append(new AgentRunEvent(
+                "evt-accepted", 1, AgentRunEventType.ACCEPTED, 1,
+                Instant.parse("2026-08-28T02:00:00Z"), "conversation-1", "run-1",
+                "queued", AgentRunEventSource.JAVA));
+
+        assertThatThrownBy(() -> store.append(new AgentRunEvent(
+                "evt-progress", 1, AgentRunEventType.PROGRESS, 3,
+                Instant.parse("2026-08-28T02:00:01Z"), "conversation-1", "run-1",
+                "running", AgentRunEventSource.PYTHON)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("event sequence must be 2 for run run-1");
     }
 
     @Test

@@ -179,6 +179,8 @@ export interface components {
     parameters: {
         WorkspaceId: string;
         ConversationId: string;
+        /** @description Reuses the first response when the same message request is retried. */
+        IdempotencyKey: string;
     };
     requestBodies: never;
     headers: never;
@@ -327,6 +329,8 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+                /** @description Reuses the first response when the same message request is retried. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
                 conversationId: components["parameters"]["ConversationId"];
@@ -357,6 +361,13 @@ export interface operations {
             };
             /** @description The Conversation is not available in the current Workspace */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Idempotency-Key was already used with different message content */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

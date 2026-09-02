@@ -59,11 +59,15 @@ export async function createMessage(
   workspaceId: string,
   conversationId: string,
   content: string,
+  idempotencyKey?: string,
 ): Promise<MessageProcessed> {
   const { data, response } = await client().POST("/api/v1/conversations/{conversationId}/messages", {
     headers: headers(accessToken),
     params: {
-      header: { "X-Workspace-Id": workspaceId },
+      header: {
+        "X-Workspace-Id": workspaceId,
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       path: { conversationId },
     },
     body: { content },

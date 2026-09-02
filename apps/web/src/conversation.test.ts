@@ -65,11 +65,13 @@ describe("Conversation persistence client", () => {
       "workspace-demo",
       "conversation-1",
       "Use calendar month",
+      "message-retry-001",
     );
 
     const submitted = request(fetchMock, 0);
     expect(submitted.method).toBe("POST");
     expect(await submitted.json()).toEqual({ content: "Use calendar month" });
+    expect(submitted.headers.get("Idempotency-Key")).toBe("message-retry-001");
     expect(accepted.userMessage.sequence).toBe(2);
     expect(accepted.agentRun.intentRoute).toBe("chat");
   });

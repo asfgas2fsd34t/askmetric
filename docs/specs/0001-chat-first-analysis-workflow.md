@@ -75,7 +75,7 @@
 - Java Spring Boot 模块化单体拥有 User、Workspace Membership、Workspace Policy、Conversation、Message、Agent Run、Analysis Task、Approval、Report、Audit Record、Data Connection、Metric Definition、Evidence Snapshot 等业务状态。
 - Python LangGraph Runtime 只拥有 Checkpoint、临时 Context Pack、派生 RAG 索引和评测执行状态。Python 不读写 Java 业务表，不接收 Data Connection Secret，不直接连接分析数据源，不执行副作用。
 - Java 与 Python 之间使用 `contracts/` 下版本化 JSON Schema 和 AsyncAPI 作为事实来源。T01 事件信封包含 eventId、schemaVersion、runId 和序号；两端都执行 Schema 校验和契约测试。链路追踪字段（traceId、spanId）在接入 OpenTelemetry 时通过新契约版本增加。
-- Java 在事务中保存 Agent Run 和 Transactional Outbox 记录，再发布到 RocketMQ 5。Python 消费工作后返回结构化进度、结果或失败事件；消息采用 at-least-once 语义，消费者先去重再修改状态，有限重试后进入死信队列。
+- Java 在事务中保存 Agent Run 和 Transactional Outbox 记录，再发布到 RocketMQ 5。Python 消费工作后返回结构化进度、结果或失败事件；Java 先将事件持久化到 `agent_run_event`，再同步 SSE 投影，消息采用 at-least-once 语义，消费者先去重再修改状态，有限重试后进入死信队列。Conversation 消息提交支持按用户、Workspace 和 Conversation 作用域的 `Idempotency-Key`，重复请求返回首次响应，同一 key 搭配不同内容拒绝且不创建新的业务记录。直接创建 Agent Run 的 T01 探针入口已移除，业务路径统一使用数据库 Agent Run 和 Outbox。
 - 首版外部行为入口是 Conversation REST/SSE seam。REST 负责提交消息、停止运行、审批提案和获取报告；SSE 负责按聚合序号推送消息、Agent Run、Analysis Task、证据、提案、报告和失败事件，并支持断线后的重放。
 - Vue 只保存临时展示状态，依据 Java 返回的事件和快照渲染 A 方案。页面必须区分 Conversation 标题、Agent Run 状态、Analysis Task 状态、当前阶段、证据、审批和报告，不把客户端状态当作业务事实。
 - Python 通过 Context Pack 获得当前消息、任务状态、相关历史、已确认事实、Metric Definition、检索证据、策略和剩余预算。对话摘要是有范围的派生输入，不能替代原始 Message；User Memory 只有经确认后才可使用。

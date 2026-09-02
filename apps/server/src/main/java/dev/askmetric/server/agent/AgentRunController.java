@@ -6,16 +6,14 @@ import java.util.Optional;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,31 +32,6 @@ public class AgentRunController {
     public AgentRunController(AgentRunService service, WorkspaceAuthorizationService workspaceAuthorization) {
         this.service = service;
         this.workspaceAuthorization = workspaceAuthorization;
-    }
-
-    @PostMapping("/{conversationId}/runs")
-    public ResponseEntity<?> submit(
-            @AuthenticationPrincipal Jwt identity,
-            @RequestHeader(value = "X-Workspace-Id", required = false) String requestedWorkspaceId,
-            @PathVariable String conversationId,
-            @RequestBody AgentRunSubmission submission) {
-        try {
-            String workspaceId = workspaceAuthorization
-                    .authorizeConversation(
-                            identity,
-                            Optional.ofNullable(requestedWorkspaceId),
-                            conversationId,
-                            WorkspacePermission.CREATE_MESSAGE)
-                    .currentWorkspaceId();
-            return ResponseEntity.accepted().body(service.submit(workspaceId, conversationId, submission));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
-        } catch (AgentRunPublishException exception) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(exception.accepted());
-        } catch (IllegalStateException exception) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(new ErrorResponse(exception.getMessage()));
-        }
     }
 
     @GetMapping(value = "/{conversationId}/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -92,7 +65,7 @@ public class AgentRunController {
         }
         // SSE 标准 Last-Event-ID 保存的是已收到的 sequence；仅补放其后的事件。
         SseEmitter emitter = new SseEmitter(120_000L);
-        service.addReplay(runId, afterSequence, emitter);
+        service.addReplay(workspaceId, conversationId, runId, afterSequence, emitter);
         return emitter;
     }
 

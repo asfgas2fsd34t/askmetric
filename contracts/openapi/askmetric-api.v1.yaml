@@ -96,6 +96,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -113,6 +114,8 @@ paths:
           description: Invalid message content
         "403":
           description: The Conversation is not available in the current Workspace
+        "409":
+          description: The Idempotency-Key was already used with different message content
 components:
   parameters:
     WorkspaceId:
@@ -127,6 +130,15 @@ components:
       required: true
       schema:
         type: string
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: Reuses the first response when the same message request is retried.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
   securitySchemes:
     bearerAuth:
       type: http

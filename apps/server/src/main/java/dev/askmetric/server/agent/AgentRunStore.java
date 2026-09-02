@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -30,6 +31,23 @@ public class AgentRunStore {
         workspaceByRun.putIfAbsent(runId, workspaceId);
         conversationByRun.putIfAbsent(runId, conversationId);
         eventsByRun.putIfAbsent(runId, new CopyOnWriteArrayList<>());
+    }
+
+    /** 将数据库事件恢复为 SSE 投影，不向当前连接重复广播历史事件。 */
+    public synchronized void restore(
+            String runId, String workspaceId, String conversationId, List<AgentRunEvent> events) {
+        create(runId, workspaceId, conversationId);
+        var restored = eventsByRun.get(runId);
+        var knownEventIds = new HashSet<String>();
+        for (AgentRunEvent existing : restored) {
+            knownEventIds.add(existing.getEventId());
+        }
+        for (AgentRunEvent event : events) {
+            if (knownEventIds.add(event.getEventId())) {
+                restored.add(event);
+            }
+        }
+        restored.sort(java.util.Comparator.comparingLong(AgentRunEvent::getSequence));
     }
 
     public synchronized boolean append(AgentRunEvent event) {

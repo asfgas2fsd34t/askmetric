@@ -8,6 +8,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -78,6 +79,7 @@ public class ConversationController {
     public ResponseEntity<?> appendMessage(
             @AuthenticationPrincipal Jwt identity,
             @RequestHeader(value = "X-Workspace-Id", required = false) String requestedWorkspaceId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @PathVariable String conversationId,
             @RequestBody CreateMessageRequest request) {
         try {
@@ -87,13 +89,15 @@ public class ConversationController {
                     conversationId,
                     WorkspacePermission.CREATE_MESSAGE);
             MessageProcessed message = service.submitMessage(
-                    identity.getSubject(), access.currentWorkspaceId(), conversationId, request);
+                    identity.getSubject(), access.currentWorkspaceId(), conversationId, request, idempotencyKey);
             return ResponseEntity.created(URI.create(
                             "/api/v1/conversations/%s/messages/%s"
                                     .formatted(conversationId, message.getUserMessage().getMessageId())))
                     .body(message);
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
+        } catch (IdempotencyConflictException exception) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(exception.getMessage()));
         }
     }
 }

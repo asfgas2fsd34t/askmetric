@@ -1,5 +1,6 @@
 package dev.askmetric.server.analysis;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum AnalysisTaskStatus {
@@ -26,5 +27,16 @@ public enum AnalysisTaskStatus {
     @JsonValue
     public String wireValue() {
         return wireValue;
+    }
+
+    /** 将 API 或幂等响应中的稳定状态值转换回枚举。 */
+    @JsonCreator
+    public static AnalysisTaskStatus fromWireValue(String wireValue) {
+        for (AnalysisTaskStatus status : values()) {
+            if (status.wireValue.equals(wireValue)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported Analysis Task status: " + wireValue);
     }
 }
