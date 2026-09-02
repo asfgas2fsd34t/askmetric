@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface AnalysisTaskMapper {
@@ -22,11 +23,11 @@ public interface AnalysisTaskMapper {
             where task.conversation_id = #{conversationId}
               and task.workspace_id = #{workspaceId}
               and membership.user_subject = #{userSubject}
-              and task.status in ('ACTIVE', 'WAITING_FOR_INPUT', 'WAITING_FOR_APPROVAL')
+              and task.status = 'ACTIVE'
             order by task.created_at, task.analysis_task_id
             limit 1
             """)
-    Optional<AnalysisTask> findOpen(
+    Optional<AnalysisTask> findActive(
             @Param("userSubject") String userSubject,
             @Param("workspaceId") String workspaceId,
             @Param("conversationId") String conversationId);
@@ -52,6 +53,59 @@ public interface AnalysisTaskMapper {
             @Param("goal") String goal,
             @Param("status") AnalysisTaskStatus status,
             @Param("sourceAgentRunId") String sourceAgentRunId);
+
+    /** 将当前活动任务置为等待输入，以便同一 Conversation 可以开始新的分析目标。 */
+    @Update("""
+            update analysis_task task
+            set status = #{status}
+            where task.analysis_task_id = #{analysisTaskId}
+              and task.conversation_id = #{conversationId}
+              and task.workspace_id = #{workspaceId}
+              and task.status = 'ACTIVE'
+              and exists (
+                  select 1
+                  from workspace_membership membership
+                  where membership.workspace_id = task.workspace_id
+                    and membership.user_subject = #{userSubject}
+              )
+            """)
+    int changeStatus(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("conversationId") String conversationId,
+            @Param("analysisTaskId") String analysisTaskId,
+            @Param("status") AnalysisTaskStatus status);
+
+    /** 记录由一个 Agent Run 触发的 Analysis Task 切换关系。 */
+    @Insert("""
+            insert into analysis_task_event (
+                event_id, analysis_task_id, source_agent_run_id, event_type, related_analysis_task_id
+            )
+            select #{eventId}, previous.analysis_task_id, run.run_id, #{eventType}, next_task.analysis_task_id
+            from analysis_task previous
+            join analysis_task next_task
+              on next_task.analysis_task_id = #{currentAnalysisTaskId}
+             and next_task.workspace_id = previous.workspace_id
+             and next_task.conversation_id = previous.conversation_id
+            join agent_run run
+              on run.run_id = #{sourceAgentRunId}
+             and run.workspace_id = previous.workspace_id
+             and run.conversation_id = previous.conversation_id
+            join workspace_membership membership on membership.workspace_id = previous.workspace_id
+            where previous.analysis_task_id = #{previousAnalysisTaskId}
+              and previous.workspace_id = #{workspaceId}
+              and previous.conversation_id = #{conversationId}
+              and membership.user_subject = #{userSubject}
+            """)
+    int appendSwitchEvent(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("conversationId") String conversationId,
+            @Param("eventId") String eventId,
+            @Param("sourceAgentRunId") String sourceAgentRunId,
+            @Param("previousAnalysisTaskId") String previousAnalysisTaskId,
+            @Param("currentAnalysisTaskId") String currentAnalysisTaskId,
+            @Param("eventType") AnalysisTaskEventType eventType);
 
     @Results(id = "analysisTask", value = {
             @Result(column = "analysis_task_id", property = "analysisTaskId"),

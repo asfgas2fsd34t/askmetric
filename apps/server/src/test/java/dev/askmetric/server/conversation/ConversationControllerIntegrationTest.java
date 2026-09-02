@@ -228,15 +228,147 @@ class ConversationControllerIntegrationTest {
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
-                .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.5))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.95))
                 .andExpect(jsonPath("$.analysisTask").doesNotExist())
                 .andExpect(jsonPath("$.assistantMessage.content").value(
-                        "当前 Conversation 已有活动 Analysis Task。请说明要继续当前目标，还是切换到新的分析目标。"));
+                        "当前对话已有活动分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.analysisTasks.length()").value(1));
+    }
+
+    @Test
+    void continuesTheActiveAnalysisTaskWithoutCreatingAnotherTask() throws Exception {
+        String conversationId = createConversation("MRR 调查");
+        String analysisTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"继续按 Enterprise 客户拆分\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
+                .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.analysisTask").doesNotExist());
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks.length()").value(1))
+                .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("active"))
+                .andExpect(jsonPath("$.agentRuns[1].analysisTaskId").value(analysisTaskId));
+    }
+
+    @Test
+    void switchesToANewAnalysisTaskAndKeepsThePreviousTaskVisible() throws Exception {
+        String conversationId = createConversation("经营指标调查");
+        String previousTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        String response = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"切换到调查客户流失率趋势\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
+                .andExpect(jsonPath("$.analysisTask.goal").value("切换到调查客户流失率趋势"))
+                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String currentTaskId = objectMapper.readTree(response).at("/analysisTask/analysisTaskId").asText();
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks.length()").value(2))
+                .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(previousTaskId))
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("waiting_for_input"))
+                .andExpect(jsonPath("$.analysisTasks[1].analysisTaskId").value(currentTaskId))
+                .andExpect(jsonPath("$.analysisTasks[1].status").value("active"))
+                .andExpect(jsonPath("$.agentRuns[1].analysisTaskId").value(currentTaskId));
+    }
+
+    @Test
+    void asksForAnAnalysisGoalWhenAContinuationCommandHasNoActiveTask() throws Exception {
+        String conversationId = createConversation("新的调查");
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"继续按 Enterprise 客户拆分\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
+                .andExpect(jsonPath("$.analysisTask").doesNotExist())
+                .andExpect(jsonPath("$.assistantMessage.content").value(
+                        "当前对话没有活动分析任务。请先描述要调查的分析目标。"));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks").isEmpty());
+    }
+
+    @Test
+    void asksForAnAnalysisGoalWhenASwitchCommandHasNoTarget() throws Exception {
+        String conversationId = createConversation("MRR 调查");
+        String activeTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"切换到\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.analysisTask").doesNotExist())
+                .andExpect(jsonPath("$.assistantMessage.content").value(
+                        "当前对话已有活动分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks.length()").value(1))
+                .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(activeTaskId))
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("active"));
+    }
+
+    private String createConversation(String title) throws Exception {
+        String response = mvc.perform(post("/api/v1/conversations")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"%s\"}".formatted(title))
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).get("conversationId").asText();
+    }
+
+    private String analysisTaskIdFor(String conversationId, String content) throws Exception {
+        String response = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"%s\"}".formatted(content))
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).at("/analysisTask/analysisTaskId").asText();
     }
 }

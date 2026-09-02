@@ -69,6 +69,7 @@
 - Conversation 是用户可见消息线程，可以包含零个或多个 Analysis Task。Analysis Task 表示一个持久分析目标，不能被 Message 或 Agent Run 替代。同一 Conversation 最多一个活动任务，不同 Conversation 可以并行运行。
 - 每条用户 Message 创建一个 Agent Run。Agent Run 必须持久化意图路由、输入、时间和按序审计事件；运行结果由事件流推导，不保存重复的状态快照。T08 引入 Analysis Task 后，Run 通过 `analysisTaskId` 记录实际任务关联；任务创建、继续或切换由该关联及任务事件推导。
 - Intent Route 的一级类型为 `chat`、`analysis`、`task_control` 和 `approval`。明确命令使用确定性规则；低置信度或关系冲突必须转为澄清，不允许静默创建或切换任务。
+- 同一 Conversation 切换分析目标时，原活动 Analysis Task 变为 `waiting_for_input`，新 Analysis Task 成为唯一 `active` 任务，并持久化记录旧任务、触发 Agent Run 与新任务关联的切换事件。用户以明确的继续命令补充当前目标时，新的 Agent Run 关联原任务且不会创建第二个任务；没有活动任务时，继续或切换命令必须请求澄清。
 - Analysis Task 的首版状态为 `active`、`waiting_for_input`、`waiting_for_approval`、`completed`、`failed` 和 `cancelled`。Agent Run 的进度和结果由 Java 持久化的有序事件表达，并拒绝非法事件流转。
 - A 方案的交互状态来自原型：`idle -> clarification -> planning -> retrieving -> querying -> synthesizing -> approval -> completed|cancelled|failed`。`approval` 只表示等待确切提案的人工决定，不表示 Agent 可以自行执行。
 - Java Spring Boot 模块化单体拥有 User、Workspace Membership、Workspace Policy、Conversation、Message、Agent Run、Analysis Task、Approval、Report、Audit Record、Data Connection、Metric Definition、Evidence Snapshot 等业务状态。

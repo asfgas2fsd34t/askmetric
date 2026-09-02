@@ -126,7 +126,11 @@ async function submitMessage() {
       ],
       agentRuns: [...activeConversation.value.agentRuns, accepted.agentRun],
       analysisTasks: [
-        ...activeConversation.value.analysisTasks,
+        ...activeConversation.value.analysisTasks.map((task) =>
+          accepted.analysisTask && task.status === "active"
+            ? { ...task, status: "waiting_for_input" as const }
+            : task,
+        ),
         ...(accepted.analysisTask ? [accepted.analysisTask] : []),
       ],
     };
@@ -298,7 +302,7 @@ onMounted(() => refresh());
           <PanelRight :size="17" aria-hidden="true" />
           <h2 id="context-heading">当前上下文</h2>
         </div>
-        <h3>Conversation</h3>
+        <h3>对话</h3>
         <dl>
           <div>
             <dt>工作区</dt>
@@ -318,14 +322,14 @@ onMounted(() => refresh());
           </div>
         </dl>
         <section v-if="latestAgentRun" class="context-section" aria-labelledby="agent-run-heading">
-          <h3 id="agent-run-heading">Agent Run</h3>
+          <h3 id="agent-run-heading">Agent 运行</h3>
           <dl>
             <div>
               <dt>标识</dt>
               <dd>{{ latestAgentRun.runId }}</dd>
             </div>
             <div>
-              <dt>Intent Route</dt>
+              <dt>意图路由</dt>
               <dd>{{ latestAgentRun.intentRoute }}</dd>
             </div>
             <div>
@@ -335,7 +339,7 @@ onMounted(() => refresh());
           </dl>
         </section>
         <section v-if="activeAnalysisTask" class="context-section" aria-labelledby="analysis-task-heading">
-          <h3 id="analysis-task-heading">Analysis Task</h3>
+          <h3 id="analysis-task-heading">分析任务</h3>
           <dl>
             <div>
               <dt>目标</dt>
@@ -350,10 +354,27 @@ onMounted(() => refresh());
               <dd>{{ activeAnalysisTask.analysisTaskId }}</dd>
             </div>
             <div>
-              <dt>来源 Run</dt>
+              <dt>来源 Agent 运行</dt>
               <dd>{{ activeAnalysisTask.sourceAgentRunId }}</dd>
             </div>
           </dl>
+        </section>
+        <section
+          v-if="activeConversation && activeConversation.analysisTasks.length"
+          class="context-section"
+          aria-labelledby="analysis-tasks-heading"
+        >
+          <h3 id="analysis-tasks-heading">分析任务列表</h3>
+          <ol class="analysis-task-list">
+            <li
+              v-for="task in activeConversation.analysisTasks"
+              :key="task.analysisTaskId"
+              :aria-current="task.status === 'active' ? 'true' : undefined"
+            >
+              <strong>{{ task.status === "active" ? "当前活动" : task.status }}</strong>
+              <span>{{ task.goal }}</span>
+            </li>
+          </ol>
         </section>
       </aside>
     </main>
