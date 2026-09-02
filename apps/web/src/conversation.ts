@@ -6,6 +6,7 @@ export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationSnapshot = components["schemas"]["ConversationSnapshot"];
 export type ConversationMessage = components["schemas"]["ConversationMessage"];
 export type MessageProcessed = components["schemas"]["MessageProcessed"];
+export type AgentRunEvent = components["schemas"]["AgentRunEvent"];
 
 function client() {
   return createClient<paths>({ baseUrl: globalThis.location?.origin ?? "http://localhost" });
@@ -73,6 +74,90 @@ export async function createMessage(
     body: { content },
   });
   return requireData(data, response, "Message creation");
+}
+
+/** Reads one SSE response, replaying only events after {@code afterSequence}. */
+export async function subscribeToAgentRun(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+  runId: string,
+  afterSequence: number,
+  onEvent: (event: AgentRunEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/events`, {
+    headers: {
+      ...headers(accessToken),
+      Accept: "text/event-stream",
+      "X-Workspace-Id": workspaceId,
+      "Last-Event-ID": String(afterSequence),
+    },
+    signal,
+  });
+  if (!response.ok || response.body === null) {
+    throw new Error(`Agent Run event stream failed with status ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  while (true) {
+    const next = await reader.read();
+    buffered += decoder.decode(next.value, { stream: !next.done });
+    const frames = buffered.split(/\r?\n\r?\n/);
+    buffered = frames.pop() ?? "";
+    for (const frame of frames) {
+      const event = parseAgentRunEvent(frame);
+      if (event !== undefined && event.sequence > afterSequence) {
+        afterSequence = event.sequence;
+        onEvent(event);
+      }
+    }
+    if (next.done) {
+      return;
+    }
+  }
+}
+
+/** Keeps an Agent Run stream current, reconnecting from the last handled sequence when needed. */
+export function watchAgentRun(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+  runId: string,
+  afterSequence: number,
+  onEvent: (event: AgentRunEvent) => void,
+): () => void {
+  const controller = new AbortController();
+  let lastSequence = afterSequence;
+  let terminal = false;
+  const receive = (event: AgentRunEvent) => {
+    lastSequence = event.sequence;
+    terminal ||= event.eventType === "agent.run.completed" || event.eventType === "agent.run.failed";
+    onEvent(event);
+  };
+
+  void (async () => {
+    while (!controller.signal.aborted && !terminal) {
+      try {
+        await subscribeToAgentRun(accessToken, workspaceId, conversationId, runId, lastSequence, receive, controller.signal);
+      } catch {
+        if (controller.signal.aborted) return;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  })();
+  return () => controller.abort();
+}
+
+function parseAgentRunEvent(frame: string): AgentRunEvent | undefined {
+  const data = frame
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  return data ? (JSON.parse(data) as AgentRunEvent) : undefined;
 }
 
 function requireData<T>(data: T | undefined, response: Response, operation: string): T {
