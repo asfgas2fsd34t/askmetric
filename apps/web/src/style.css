@@ -523,6 +523,30 @@ textarea {
   margin-top: 16px;
 }
 
+.analysis-task-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-task-list li {
+  display: grid;
+  gap: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-subtle);
+}
+
+.analysis-task-list li[aria-current="true"] {
+  border-left-color: var(--accent);
+}
+
+.analysis-task-list strong,
+.analysis-task-list span {
+  overflow-wrap: anywhere;
+}
+
 .context-panel dt {
   margin-bottom: 5px;
   color: #7b847e;

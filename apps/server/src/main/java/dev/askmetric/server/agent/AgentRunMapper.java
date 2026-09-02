@@ -39,7 +39,7 @@ public interface AgentRunMapper {
             @Param("intentRoute") AgentRunIntentRoute intentRoute,
             @Param("intentConfidence") java.math.BigDecimal intentConfidence);
 
-    /** 将 Analysis Task 关联到创建它的 Agent Run。 */
+    /** 将同一 Conversation 内、当前用户有权访问的 Analysis Task 关联到 Agent Run。 */
     @org.apache.ibatis.annotations.Update("""
             update agent_run run
             set analysis_task_id = #{analysisTaskId}
@@ -50,7 +50,6 @@ public interface AgentRunMapper {
                   from analysis_task task
                   join workspace_membership membership on membership.workspace_id = task.workspace_id
                   where task.analysis_task_id = #{analysisTaskId}
-                    and task.source_agent_run_id = run.run_id
                     and task.workspace_id = run.workspace_id
                     and task.conversation_id = run.conversation_id
                     and membership.user_subject = #{userSubject}
