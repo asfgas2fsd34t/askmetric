@@ -74,10 +74,15 @@ public class LiveRocketMqGateway implements RocketMqGateway {
 
     @Override
     public void publish(AgentRunRequest request) {
+        publish(requestTopic, request);
+    }
+
+    @Override
+    public void publish(String topic, AgentRunRequest request) {
         try {
             contractValidator.validateRequest(request);
             var message = provider.newMessageBuilder()
-                    .setTopic(requestTopic)
+                    .setTopic(topic)
                     .setTag("agent-run")
                     .setKeys(request.getEventId())
                     .setBody(objectMapper.writeValueAsBytes(request))

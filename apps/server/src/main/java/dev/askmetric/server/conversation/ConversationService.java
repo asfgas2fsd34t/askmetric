@@ -1,9 +1,13 @@
 package dev.askmetric.server.conversation;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
 import dev.askmetric.server.agent.AgentRunIntentRoute;
 import dev.askmetric.server.agent.AgentRunMapper;
+import dev.askmetric.server.agent.AgentRunOutboxMapper;
+import dev.askmetric.server.agent.AgentRunRequest;
 import dev.askmetric.server.agent.AnalysisTaskCommand;
 import dev.askmetric.server.agent.DeterministicIntentRouter;
 import dev.askmetric.server.agent.IntentDecision;
@@ -15,7 +19,11 @@ import dev.askmetric.server.analysis.AnalysisTaskStatus;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,20 +35,32 @@ public class ConversationService {
     private final ConversationMapper mapper;
     private final AgentRunMapper agentRunMapper;
     private final AnalysisTaskMapper analysisTaskMapper;
+    private final MessageIdempotencyMapper idempotencyMapper;
+    private final AgentRunOutboxMapper outboxMapper;
     private final DeterministicIntentRouter intentRouter;
     private final DeterministicChatReply deterministicChatReply;
+    private final ObjectMapper objectMapper;
+    private final String requestTopic;
 
     ConversationService(
             ConversationMapper mapper,
             AgentRunMapper agentRunMapper,
             AnalysisTaskMapper analysisTaskMapper,
+            MessageIdempotencyMapper idempotencyMapper,
+            AgentRunOutboxMapper outboxMapper,
             DeterministicIntentRouter intentRouter,
-            DeterministicChatReply deterministicChatReply) {
+            DeterministicChatReply deterministicChatReply,
+            ObjectMapper objectMapper,
+            @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
         this.mapper = mapper;
         this.agentRunMapper = agentRunMapper;
         this.analysisTaskMapper = analysisTaskMapper;
+        this.idempotencyMapper = idempotencyMapper;
+        this.outboxMapper = outboxMapper;
         this.intentRouter = intentRouter;
         this.deterministicChatReply = deterministicChatReply;
+        this.objectMapper = objectMapper;
+        this.requestTopic = requestTopic;
     }
 
     @Transactional(readOnly = true)
@@ -74,8 +94,15 @@ public class ConversationService {
             String userSubject,
             String workspaceId,
             String conversationId,
-            CreateMessageRequest request) {
+            CreateMessageRequest request,
+            String requestedIdempotencyKey) {
         String content = requiredText(request == null ? null : request.getContent(), "content", MAX_MESSAGE_LENGTH);
+        String idempotencyKey = normalizeIdempotencyKey(requestedIdempotencyKey);
+        MessageIdempotencyRecord reservation = reserveIdempotency(
+                userSubject, workspaceId, conversationId, idempotencyKey, content);
+        if (reservation != null && reservation.getResponseJson() != null) {
+            return replayResponse(reservation.getResponseJson());
+        }
         IntentDecision intent = intentRouter.route(content);
         ConversationMessage userMessage = mapper.appendMessage(
                         userSubject,
@@ -101,8 +128,9 @@ public class ConversationService {
                 != 1) {
             throw new AccessDeniedException("Conversation not found in Workspace");
         }
+        MessageProcessed processed;
         if (intent.getRoute() == AgentRunIntentRoute.ANALYSIS) {
-            return processAnalysisMessage(
+            processed = processAnalysisMessage(
                     userSubject,
                     workspaceId,
                     conversationId,
@@ -111,8 +139,113 @@ public class ConversationService {
                     runId,
                     activeTask,
                     intent.getAnalysisTaskCommand());
+        } else {
+            processed = completeChat(userSubject, workspaceId, conversationId, content, userMessage, runId);
         }
-        return completeChat(userSubject, workspaceId, conversationId, content, userMessage, runId);
+        if (processed.getAgentRun().getAnalysisTaskId() != null) {
+            enqueueAnalysisRun(conversationId, content, processed.getAgentRun().getRunId());
+        }
+        completeIdempotency(reservation, processed);
+        return processed;
+    }
+
+    /** 预留幂等键；重复请求在当前事务提交后可以安全读取首次响应。 */
+    private MessageIdempotencyRecord reserveIdempotency(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            String idempotencyKey,
+            String content) {
+        if (idempotencyKey == null) {
+            return null;
+        }
+        String requestHash = hash(content);
+        int inserted = idempotencyMapper.reserve(
+                "idempotency_" + UUID.randomUUID(),
+                workspaceId,
+                conversationId,
+                userSubject,
+                idempotencyKey,
+                requestHash);
+        MessageIdempotencyRecord record = idempotencyMapper.find(
+                        workspaceId, conversationId, userSubject, idempotencyKey)
+                .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
+        if (inserted == 0) {
+            if (!record.getRequestHash().equals(requestHash)) {
+                throw new IdempotencyConflictException("Idempotency-Key 已用于不同的消息内容");
+            }
+            if (record.getResponseJson() == null) {
+                throw new IllegalStateException("相同 Idempotency-Key 的请求正在处理中");
+            }
+        }
+        return record;
+    }
+
+    private MessageProcessed replayResponse(String responseJson) {
+        try {
+            return objectMapper.readValue(responseJson, MessageProcessed.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("无法读取幂等请求的首次响应", exception);
+        }
+    }
+
+    private void completeIdempotency(MessageIdempotencyRecord reservation, MessageProcessed processed) {
+        if (reservation == null) {
+            return;
+        }
+        try {
+            if (idempotencyMapper.complete(reservation.getIdempotencyId(), objectMapper.writeValueAsString(processed)) != 1) {
+                throw new IllegalStateException("无法保存幂等请求响应");
+            }
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("无法序列化幂等请求响应", exception);
+        }
+    }
+
+    private void enqueueAnalysisRun(String conversationId, String message, String runId) {
+        AgentRunRequest request = new AgentRunRequest(
+                "agent_run_request_" + runId,
+                1,
+                AgentRunEventType.REQUESTED,
+                1,
+                java.time.Instant.now(),
+                conversationId,
+                runId,
+                message);
+        try {
+            String payload = objectMapper.writeValueAsString(request);
+            if (outboxMapper.enqueue(
+                            "outbox_" + runId,
+                            request.getEventId(),
+                            runId,
+                            requestTopic,
+                            payload)
+                    != 1) {
+                throw new IllegalStateException("Agent Run 请求已存在或无法写入 Outbox");
+            }
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("无法序列化 Agent Run 请求", exception);
+        }
+    }
+
+    private static String normalizeIdempotencyKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        String normalized = key.strip();
+        if (normalized.length() > 200 || normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Idempotency-Key 必须是 1-200 个可见字符");
+        }
+        return normalized;
+    }
+
+    private static String hash(String content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private MessageProcessed completeChat(
@@ -226,7 +359,7 @@ public class ConversationService {
                 userMessage,
                 null,
                 persistedRun(userSubject, workspaceId, conversationId, runId),
-                null);
+                activeTask);
     }
 
     private MessageProcessed switchAnalysisTask(

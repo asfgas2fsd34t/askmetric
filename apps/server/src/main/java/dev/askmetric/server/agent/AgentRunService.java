@@ -1,79 +1,69 @@
 package dev.askmetric.server.agent;
 
-import java.time.Instant;
-import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
 public class AgentRunService {
     private final AgentRunStore store;
-    private final RocketMqGateway gateway;
+    private final AgentRunMapper agentRunMapper;
 
-    public AgentRunService(AgentRunStore store, RocketMqGateway gateway) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentRunService(AgentRunStore store, AgentRunMapper agentRunMapper) {
         this.store = store;
-        this.gateway = gateway;
-    }
-
-    public AgentRunAccepted submit(String workspaceId, String conversationId, AgentRunSubmission submission) {
-        String runId = "run_" + UUID.randomUUID();
-        AgentRunRequest request = new AgentRunRequest(
-                UUID.randomUUID().toString(),
-                1,
-                AgentRunEventType.REQUESTED,
-                1,
-                Instant.now(),
-                conversationId,
-                runId,
-                submission.getMessage().trim());
-        store.create(runId, workspaceId, conversationId);
-        // 先记录 QUEUED，确保消息队列投递失败时仍有可审计的 Agent Run 与连续事件序号。
-        store.append(new AgentRunEvent(
-                request.getEventId(),
-                1,
-                AgentRunEventType.ACCEPTED,
-                1,
-                request.getOccurredAt(),
-                conversationId,
-                runId,
-                "Agent Run 已进入队列",
-                AgentRunEventSource.JAVA));
-        try {
-            gateway.publish(request);
-        } catch (RuntimeException exception) {
-            // 投递失败不是丢弃运行：将其转为终态，让客户端和后续审计都能观察到失败原因。
-            store.append(new AgentRunEvent(
-                    UUID.randomUUID().toString(),
-                    1,
-                    AgentRunEventType.FAILED,
-                    2,
-                    Instant.now(),
-                    conversationId,
-                    runId,
-                    "Agent Run 无法投递到消息队列",
-                    AgentRunEventSource.JAVA));
-            throw new AgentRunPublishException(
-                    accepted(conversationId, runId), exception);
-        }
-        return accepted(conversationId, runId);
+        this.agentRunMapper = agentRunMapper;
     }
 
     public void acceptEvent(AgentRunEvent event) {
-        store.append(event);
+        if (agentRunMapper == null) {
+            store.append(event);
+            return;
+        }
+        int inserted = agentRunMapper.appendExternalEvent(
+                event.getEventId(),
+                event.getRunId(),
+                event.getSequence(),
+                event.getEventType(),
+                event.getOccurredAt(),
+                event.getConversationId(),
+                event.getMessage(),
+                event.getSource());
+        if (store.exists(event.getRunId())) {
+            store.append(event);
+            return;
+        }
+        if (inserted == 1) {
+            agentRunMapper.workspaceId(event.getConversationId(), event.getRunId())
+                    .ifPresent(workspaceId -> hydrate(event.getConversationId(), event.getRunId(), workspaceId));
+            return;
+        }
+        if (inserted == 0
+                && !agentRunMapper.eventExists(event.getEventId(), event.getRunId())
+                && !agentRunMapper.sequenceExists(event.getRunId(), event.getSequence())) {
+            throw new IllegalArgumentException("Agent Run event was not accepted: " + event.getEventId());
+        }
     }
 
     public boolean exists(String workspaceId, String conversationId, String runId) {
-        return store.exists(runId, workspaceId, conversationId);
+        return store.exists(runId, workspaceId, conversationId)
+                || agentRunMapper != null && agentRunMapper.exists(workspaceId, conversationId, runId);
     }
 
-    public void addReplay(String runId, long afterSequence, SseEmitter emitter) {
+    public void addReplay(String workspaceId, String conversationId, String runId, long afterSequence, SseEmitter emitter) {
+        if (!store.exists(runId) && agentRunMapper != null) {
+            hydrate(conversationId, runId, workspaceId);
+        }
         store.registerAndReplay(runId, afterSequence, emitter);
     }
 
-    private static AgentRunAccepted accepted(String conversationId, String runId) {
-        return new AgentRunAccepted(
-                conversationId,
-                runId,
-                "/api/v1/conversations/%s/runs/%s/events".formatted(conversationId, runId));
+    private void hydrate(String conversationId, String runId, String workspaceId) {
+        if (agentRunMapper == null) {
+            return;
+        }
+        var events = agentRunMapper.eventsForRun(conversationId, runId);
+        if (!events.isEmpty()) {
+            store.restore(runId, workspaceId, conversationId, events);
+        }
     }
+
 }

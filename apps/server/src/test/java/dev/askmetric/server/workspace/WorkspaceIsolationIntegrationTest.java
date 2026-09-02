@@ -115,17 +115,6 @@ class WorkspaceIsolationIntegrationTest {
                 .hasMessage("Workspace Membership not found");
     }
 
-    @Test
-    void businessUserCannotCreateAgentRunForConversationInAnotherWorkspace() throws Exception {
-        mvc.perform(post("/api/v1/conversations/conversation-finance/runs")
-                        .header("X-Workspace-Id", "workspace-demo")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"forged Conversation\"}")
-                        .with(jwt().jwt(token -> token
-                                .subject("00000000-0000-0000-0000-000000000001"))))
-                .andExpect(status().isForbidden());
-    }
-
     private static Jwt identity(String subject) {
         return Jwt.withTokenValue("token")
                 .header("alg", "none")

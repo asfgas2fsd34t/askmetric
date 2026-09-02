@@ -116,7 +116,13 @@ async function submitMessage() {
     const token = await accessToken();
     const workspaceId = session.value.currentMembership.workspaceId;
     const conversationId = activeConversation.value.conversationId;
-    const accepted = await createMessage(token, workspaceId, conversationId, content);
+    const accepted = await createMessage(
+      token,
+      workspaceId,
+      conversationId,
+      content,
+      crypto.randomUUID(),
+    );
     activeConversation.value = {
       ...activeConversation.value,
       messages: [

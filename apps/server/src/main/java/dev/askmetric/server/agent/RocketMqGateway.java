@@ -6,6 +6,11 @@ package dev.askmetric.server.agent;
 public interface RocketMqGateway extends AutoCloseable {
     void publish(AgentRunRequest request);
 
+    /** 按 Outbox 记录指定目标 Topic 发布；旧探针实现默认沿用自身配置。 */
+    default void publish(String topic, AgentRunRequest request) {
+        publish(request);
+    }
+
     @Override
     void close();
 }

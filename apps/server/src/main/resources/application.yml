@@ -36,3 +36,6 @@ askmetric:
     request-topic: ${ROCKETMQ_REQUEST_TOPIC:askmetric-agent-run-request}
     event-topic: ${ROCKETMQ_EVENT_TOPIC:askmetric-agent-run-event}
     consumer-group: ${ROCKETMQ_CONSUMER_GROUP:askmetric-server-events}
+  outbox:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:5}

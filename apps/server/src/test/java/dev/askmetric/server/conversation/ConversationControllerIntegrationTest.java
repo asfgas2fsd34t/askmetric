@@ -134,6 +134,67 @@ class ConversationControllerIntegrationTest {
     }
 
     @Test
+    void replaysTheFirstResponseForAnIdempotentMessageRetry() throws Exception {
+        String key = "message-retry-001";
+        String first = mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String replay = mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode firstJson = objectMapper.readTree(first);
+        JsonNode replayJson = objectMapper.readTree(replay);
+        org.assertj.core.api.Assertions.assertThat(replayJson.at("/userMessage/messageId").asText())
+                .isEqualTo(firstJson.at("/userMessage/messageId").asText());
+        org.assertj.core.api.Assertions.assertThat(replayJson.at("/agentRun/runId").asText())
+                .isEqualTo(firstJson.at("/agentRun/runId").asText());
+
+        mvc.perform(get("/api/v1/conversations/conversation-demo")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages.length()", org.hamcrest.Matchers.is(2)))
+                .andExpect(jsonPath("$.agentRuns.length()", org.hamcrest.Matchers.is(1)));
+    }
+
+    @Test
+    void rejectsAnIdempotencyKeyReusedForDifferentMessageContent() throws Exception {
+        String key = "message-conflict-001";
+        mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你是谁？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Idempotency-Key 已用于不同的消息内容"));
+    }
+
+    @Test
     void completesAGreetingAsChatWithoutCreatingAnAnalysisTask() throws Exception {
         mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
                         .header("X-Workspace-Id", "workspace-demo")
