@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversationId}/runs/{runId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay and stream ordered Agent Run events for a Conversation */
+        get: operations["streamAgentRunEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -168,6 +185,11 @@ export interface components {
             /** @enum {string} */
             source: "java" | "python";
         };
+        AgentRunEvent: components["schemas"]["AgentRunAuditEvent"] & {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            conversationId: string;
+        };
         CreateConversationRequest: {
             title: string;
         };
@@ -179,6 +201,9 @@ export interface components {
     parameters: {
         WorkspaceId: string;
         ConversationId: string;
+        RunId: string;
+        /** @description Sequence of the last event displayed by the client. The stream replays only later events. */
+        LastEventId: number;
         /** @description Reuses the first response when the same message request is retried. */
         IdempotencyKey: string;
     };
@@ -368,6 +393,54 @@ export interface operations {
             };
             /** @description The Idempotency-Key was already used with different message content */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    streamAgentRunEvents: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+                /** @description Sequence of the last event displayed by the client. The stream replays only later events. */
+                "Last-Event-ID"?: components["parameters"]["LastEventId"];
+            };
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ordered SSE events after Last-Event-ID; terminal events complete the stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["AgentRunEvent"];
+                };
+            };
+            /** @description Invalid Last-Event-ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Conversation is not available in the current Workspace */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Agent Run is not in the Conversation */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

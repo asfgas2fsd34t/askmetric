@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import {
   Building2,
+  CircleDashed,
   LogOut,
   MessagesSquare,
-  PanelRight,
   Plus,
   RefreshCw,
   Send,
   UserRound,
 } from "lucide-vue-next";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import { accessToken, logout } from "./auth";
 import {
@@ -17,6 +17,8 @@ import {
   createMessage,
   loadConversation,
   loadConversations,
+  watchAgentRun,
+  type AgentRunEvent,
   type ConversationSnapshot,
   type ConversationSummary,
 } from "./conversation";
@@ -31,10 +33,84 @@ const sending = ref(false);
 const error = ref("");
 const conversationError = ref("");
 const draft = ref("");
-const latestAgentRun = computed(() => activeConversation.value?.agentRuns.at(-1));
-const activeAnalysisTask = computed(() =>
-  activeConversation.value?.analysisTasks.find((task) => task.status === "active"),
-);
+const runSubscriptions = new Map<string, () => void>();
+const activeAgentRuns = computed(() => activeConversation.value?.agentRuns.filter((run) => !runIsTerminal(run)) ?? []);
+const activeAgentRun = computed(() => activeAgentRuns.value.at(-1));
+
+function stopRunSubscriptions() {
+  runSubscriptions.forEach((stop) => stop());
+  runSubscriptions.clear();
+}
+
+function runIsTerminal(run: NonNullable<typeof activeConversation.value>["agentRuns"][number]) {
+  const type = run.auditEvents.at(-1)?.eventType;
+  return type === "agent.run.completed" || type === "agent.run.failed";
+}
+
+async function activateConversation(snapshot: ConversationSnapshot | undefined, expectedConversationId?: string) {
+  if (expectedConversationId && activeConversation.value?.conversationId !== expectedConversationId) return;
+  stopRunSubscriptions();
+  activeConversation.value = snapshot;
+  if (!snapshot || !session.value) return;
+
+  const token = await accessToken();
+  if (activeConversation.value?.conversationId !== snapshot.conversationId) return;
+  for (const run of snapshot.agentRuns.filter((candidate) => !runIsTerminal(candidate))) {
+    const afterSequence = run.auditEvents.at(-1)?.sequence ?? 0;
+    const stop = watchAgentRun(
+      token,
+      session.value.currentMembership.workspaceId,
+      snapshot.conversationId,
+      run.runId,
+      afterSequence,
+      applyAgentRunEvent,
+    );
+    runSubscriptions.set(run.runId, stop);
+  }
+}
+
+function applyAgentRunEvent(event: AgentRunEvent) {
+  const snapshot = activeConversation.value;
+  if (!snapshot || snapshot.conversationId !== event.conversationId) return;
+
+  let received = false;
+  const agentRuns = snapshot.agentRuns.map((run) => {
+    if (run.runId !== event.runId) return run;
+    if (run.auditEvents.some((existing) => existing.eventId === event.eventId || existing.sequence >= event.sequence)) {
+      return run;
+    }
+    received = true;
+    return { ...run, auditEvents: [...run.auditEvents, event] };
+  });
+  if (!received) return;
+  activeConversation.value = { ...snapshot, agentRuns };
+
+  if (event.eventType === "agent.run.completed" || event.eventType === "agent.run.failed") {
+    runSubscriptions.get(event.runId)?.();
+    runSubscriptions.delete(event.runId);
+    if (session.value) {
+      void refreshCompletedRun(session.value.currentMembership.workspaceId, snapshot.conversationId);
+    }
+  }
+}
+
+async function refreshCompletedRun(workspaceId: string, conversationId: string) {
+  let delay = 500;
+  while (
+    activeConversation.value?.conversationId === conversationId &&
+    session.value?.currentMembership.workspaceId === workspaceId
+  ) {
+    try {
+      const snapshot = await loadConversation(await accessToken(), workspaceId, conversationId);
+      await activateConversation(snapshot, conversationId);
+      return;
+    } catch {
+      conversationError.value = "无法加载对话";
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 10_000);
+    }
+  }
+}
 
 async function refresh(requestedWorkspaceId?: string) {
   loading.value = true;
@@ -50,23 +126,24 @@ async function refresh(requestedWorkspaceId?: string) {
 }
 
 function selectWorkspace(event: Event) {
+  stopRunSubscriptions();
   activeConversation.value = undefined;
   conversations.value = [];
   void refresh((event.target as HTMLSelectElement).value);
 }
 
-async function refreshConversations(workspaceId: string, preferredConversationId?: string) {
+async function refreshConversations(workspaceId: string, preferredConversationId?: string): Promise<boolean> {
   conversationLoading.value = true;
   conversationError.value = "";
   try {
     const token = await accessToken();
     conversations.value = await loadConversations(token, workspaceId);
     const conversationId = preferredConversationId ?? conversations.value[0]?.conversationId;
-    activeConversation.value = conversationId
-      ? await loadConversation(token, workspaceId, conversationId)
-      : undefined;
+    await activateConversation(conversationId ? await loadConversation(token, workspaceId, conversationId) : undefined);
+    return true;
   } catch {
     conversationError.value = "无法加载对话";
+    return false;
   } finally {
     conversationLoading.value = false;
   }
@@ -77,11 +154,11 @@ async function openConversation(conversationId: string) {
   conversationLoading.value = true;
   conversationError.value = "";
   try {
-    activeConversation.value = await loadConversation(
+    await activateConversation(await loadConversation(
       await accessToken(),
       session.value.currentMembership.workspaceId,
       conversationId,
-    );
+    ));
   } catch {
     conversationError.value = "无法打开对话";
   } finally {
@@ -123,7 +200,7 @@ async function submitMessage() {
       content,
       crypto.randomUUID(),
     );
-    activeConversation.value = {
+    await activateConversation({
       ...activeConversation.value,
       messages: [
         ...activeConversation.value.messages,
@@ -139,7 +216,7 @@ async function submitMessage() {
         ),
         ...(accepted.analysisTask ? [accepted.analysisTask] : []),
       ],
-    };
+    });
     draft.value = "";
     await refreshConversations(workspaceId, conversationId);
   } catch {
@@ -150,6 +227,7 @@ async function submitMessage() {
 }
 
 onMounted(() => refresh());
+onUnmounted(stopRunSubscriptions);
 </script>
 
 <template>
@@ -260,19 +338,12 @@ onMounted(() => refresh());
             </article>
             <div v-if="activeConversation.messages.length === 0" class="empty-list">暂无消息</div>
           </div>
-          <div v-if="activeConversation.agentRuns.length" class="agent-run-timeline" aria-label="Agent 运行记录">
-            <article v-for="run in activeConversation.agentRuns" :key="run.runId" class="agent-run">
-              <div>
-                <strong>{{ run.auditEvents.at(-1)?.message ?? "等待 Agent 事件" }}</strong>
-                <span>{{ run.intentRoute }} · {{ Math.round(run.intentConfidence * 100) }}%</span>
-              </div>
-              <ul class="agent-run-audit-events" aria-label="运行审计事件">
-                <li v-for="event in run.auditEvents" :key="event.eventId">
-                  <span>{{ event.eventType }}</span>
-                  <small>{{ event.message }}</small>
-                </li>
-              </ul>
-            </article>
+          <div v-if="activeAgentRun" class="agent-run-status" role="status" aria-live="polite">
+            <CircleDashed :size="16" aria-hidden="true" />
+            <div>
+              <strong>{{ activeAgentRun.auditEvents.at(-1)?.message ?? "正在处理" }}</strong>
+              <small v-if="activeAgentRuns.length > 1">另有 {{ activeAgentRuns.length - 1 }} 个任务正在处理</small>
+            </div>
           </div>
           <form class="message-composer" @submit.prevent="submitMessage">
             <label class="sr-only" for="message-draft">消息</label>
@@ -302,87 +373,6 @@ onMounted(() => refresh());
           <h1 id="workspace-heading">你好，{{ session.user.displayName }}</h1>
         </div>
       </section>
-
-      <aside class="context-panel" aria-labelledby="context-heading">
-        <div class="panel-heading">
-          <PanelRight :size="17" aria-hidden="true" />
-          <h2 id="context-heading">当前上下文</h2>
-        </div>
-        <h3>对话</h3>
-        <dl>
-          <div>
-            <dt>工作区</dt>
-            <dd>{{ session.currentMembership.workspaceName }}</dd>
-          </div>
-          <div>
-            <dt>成员关系</dt>
-            <dd>{{ session.currentMembership.membershipId }}</dd>
-          </div>
-          <div>
-            <dt>当前用户</dt>
-            <dd>{{ session.user.username }}</dd>
-          </div>
-          <div v-if="activeConversation">
-            <dt>标识</dt>
-            <dd>{{ activeConversation.conversationId }}</dd>
-          </div>
-        </dl>
-        <section v-if="latestAgentRun" class="context-section" aria-labelledby="agent-run-heading">
-          <h3 id="agent-run-heading">Agent 运行</h3>
-          <dl>
-            <div>
-              <dt>标识</dt>
-              <dd>{{ latestAgentRun.runId }}</dd>
-            </div>
-            <div>
-              <dt>意图路由</dt>
-              <dd>{{ latestAgentRun.intentRoute }}</dd>
-            </div>
-            <div>
-              <dt>置信度</dt>
-              <dd>{{ Math.round(latestAgentRun.intentConfidence * 100) }}%</dd>
-            </div>
-          </dl>
-        </section>
-        <section v-if="activeAnalysisTask" class="context-section" aria-labelledby="analysis-task-heading">
-          <h3 id="analysis-task-heading">分析任务</h3>
-          <dl>
-            <div>
-              <dt>目标</dt>
-              <dd>{{ activeAnalysisTask.goal }}</dd>
-            </div>
-            <div>
-              <dt>状态</dt>
-              <dd>{{ activeAnalysisTask.status }}</dd>
-            </div>
-            <div>
-              <dt>标识</dt>
-              <dd>{{ activeAnalysisTask.analysisTaskId }}</dd>
-            </div>
-            <div>
-              <dt>来源 Agent 运行</dt>
-              <dd>{{ activeAnalysisTask.sourceAgentRunId }}</dd>
-            </div>
-          </dl>
-        </section>
-        <section
-          v-if="activeConversation && activeConversation.analysisTasks.length"
-          class="context-section"
-          aria-labelledby="analysis-tasks-heading"
-        >
-          <h3 id="analysis-tasks-heading">分析任务列表</h3>
-          <ol class="analysis-task-list">
-            <li
-              v-for="task in activeConversation.analysisTasks"
-              :key="task.analysisTaskId"
-              :aria-current="task.status === 'active' ? 'true' : undefined"
-            >
-              <strong>{{ task.status === "active" ? "当前活动" : task.status }}</strong>
-              <span>{{ task.goal }}</span>
-            </li>
-          </ol>
-        </section>
-      </aside>
     </main>
   </div>
 </template>

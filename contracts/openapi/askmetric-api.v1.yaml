@@ -116,6 +116,30 @@ paths:
           description: The Conversation is not available in the current Workspace
         "409":
           description: The Idempotency-Key was already used with different message content
+  /api/v1/conversations/{conversationId}/runs/{runId}/events:
+    get:
+      operationId: streamAgentRunEvents
+      summary: Replay and stream ordered Agent Run events for a Conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/RunId"
+        - $ref: "#/components/parameters/LastEventId"
+      responses:
+        "200":
+          description: Ordered SSE events after Last-Event-ID; terminal events complete the stream.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/AgentRunEvent"
+        "400":
+          description: Invalid Last-Event-ID
+        "403":
+          description: The Conversation is not available in the current Workspace
+        "404":
+          description: The Agent Run is not in the Conversation
 components:
   parameters:
     WorkspaceId:
@@ -130,6 +154,21 @@ components:
       required: true
       schema:
         type: string
+    RunId:
+      in: path
+      name: runId
+      required: true
+      schema:
+        type: string
+    LastEventId:
+      in: header
+      name: Last-Event-ID
+      required: false
+      description: Sequence of the last event displayed by the client. The stream replays only later events.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
     IdempotencyKey:
       in: header
       name: Idempotency-Key
@@ -323,6 +362,17 @@ components:
         source:
           type: string
           enum: [java, python]
+    AgentRunEvent:
+      allOf:
+        - $ref: "#/components/schemas/AgentRunAuditEvent"
+        - type: object
+          required: [schemaVersion, conversationId]
+          properties:
+            schemaVersion:
+              type: integer
+              enum: [1]
+            conversationId:
+              type: string
     CreateConversationRequest:
       type: object
       required: [title]

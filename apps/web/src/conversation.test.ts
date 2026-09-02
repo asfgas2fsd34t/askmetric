@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMessage, loadConversation, loadConversations } from "./conversation";
+import { createMessage, loadConversation, loadConversations, subscribeToAgentRun, watchAgentRun } from "./conversation";
 
 describe("Conversation persistence client", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -113,6 +113,48 @@ describe("Conversation persistence client", () => {
 
     expect(accepted.agentRun.intentRoute).toBe("analysis");
     expect(accepted.analysisTask?.sourceAgentRunId).toBe("run-2");
+  });
+
+  it("subscribes to a run from the last received sequence", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        "id: 2\nevent: agent.run.progress\ndata: {\"eventId\":\"event-2\",\"schemaVersion\":1,\"eventType\":\"agent.run.progress\",\"sequence\":2,\"occurredAt\":\"2026-09-02T12:00:00Z\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"message\":\"running\",\"source\":\"python\"}\n\nid: 3\nevent: agent.run.completed\ndata: {\"eventId\":\"event-3\",\"schemaVersion\":1,\"eventType\":\"agent.run.completed\",\"sequence\":3,\"occurredAt\":\"2026-09-02T12:00:01Z\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"message\":\"done\",\"source\":\"python\"}\n\n",
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const received: string[] = [];
+
+    await subscribeToAgentRun("token", "workspace-demo", "conversation-1", "run-1", 1, (event) => {
+      received.push(event.message);
+    });
+
+    const subscription = fetchMock.mock.calls[0][1] as RequestInit;
+    const requestHeaders = new Headers(subscription.headers);
+    expect(requestHeaders.get("Authorization")).toBe("Bearer token");
+    expect(requestHeaders.get("X-Workspace-Id")).toBe("workspace-demo");
+    expect(requestHeaders.get("Last-Event-ID")).toBe("1");
+    expect(received).toEqual(["running", "done"]);
+  });
+
+  it("reconnects after a non-terminal stream closes without repeating an event", async () => {
+    const progress = "id: 2\nevent: agent.run.progress\ndata: {\"eventId\":\"event-2\",\"schemaVersion\":1,\"eventType\":\"agent.run.progress\",\"sequence\":2,\"occurredAt\":\"2026-09-02T12:00:00Z\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"message\":\"running\",\"source\":\"python\"}\n\n";
+    const completed = "id: 3\nevent: agent.run.completed\ndata: {\"eventId\":\"event-3\",\"schemaVersion\":1,\"eventType\":\"agent.run.completed\",\"sequence\":3,\"occurredAt\":\"2026-09-02T12:00:01Z\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"message\":\"done\",\"source\":\"python\"}\n\n";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(progress, { headers: { "Content-Type": "text/event-stream" } }))
+      .mockResolvedValueOnce(new Response(completed, { headers: { "Content-Type": "text/event-stream" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const received: number[] = [];
+
+    const stop = watchAgentRun("token", "workspace-demo", "conversation-1", "run-1", 1, (event) => {
+      received.push(event.sequence);
+    });
+    await vi.waitFor(() => expect(received).toEqual([2, 3]));
+    stop();
+
+    const reconnected = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(new Headers(reconnected.headers).get("Last-Event-ID")).toBe("2");
   });
 });
 
