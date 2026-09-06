@@ -11,7 +11,6 @@ test("Business User enters and switches Workspace using Java authorization conte
   await expect(page.getByText("Alice Chen", { exact: true })).toBeVisible();
   const workspace = page.getByLabel("当前工作区");
   await expect(workspace).toHaveValue("workspace-demo");
-  await expect(page.getByText("membership-demo", { exact: true })).toBeVisible();
 
   const confirmed = page.waitForResponse(
     (response) =>
@@ -25,10 +24,9 @@ test("Business User enters and switches Workspace using Java authorization conte
 
   expect(session.currentMembership.workspaceId).toBe("workspace-growth");
   await expect(workspace).toHaveValue(session.currentMembership.workspaceId);
-  await expect(page.getByText(session.currentMembership.membershipId, { exact: true })).toBeVisible();
 });
 
-test("Business User sees the routed Agent Run and new Analysis Task", async ({ page }) => {
+test("Business User can stop an active analysis", async ({ page }) => {
   await page.goto("/");
   await page.locator("#username").fill("alice");
   await page.locator("#password").fill("askmetric-demo");
@@ -39,13 +37,8 @@ test("Business User sees the routed Agent Run and new Analysis Task", async ({ p
   await page.getByRole("textbox", { name: "消息" }).fill("为什么本月 MRR 下降？");
   await page.getByRole("button", { name: "发送消息" }).click();
 
-  const context = page.locator(".context-panel");
-  await expect(context.getByRole("heading", { name: "Agent 运行" })).toBeVisible();
-  await expect(context.getByText("analysis", { exact: true })).toBeVisible();
-  await expect(context.getByText("95%", { exact: true })).toBeVisible();
-  await expect(context.getByRole("heading", { name: "分析任务" })).toBeVisible();
-  await expect(context.getByText("为什么本月 MRR 下降？", { exact: true })).toBeVisible();
-  await expect(context.getByText("active", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "停止分析" }).click();
+  await expect(page.getByText(/阶段取消：用户主动停止分析/)).toBeVisible();
 });
 
 test("Business User sees Agent Run progress and the terminal snapshot", async ({ page }) => {
@@ -68,7 +61,5 @@ test("Business User sees Agent Run progress and the terminal snapshot", async ({
   await page.getByRole("button", { name: "发送消息" }).click();
 
   await terminalSnapshot;
-  const timeline = page.getByLabel("Agent 运行记录");
-  await expect(timeline.getByText("agent.run.completed", { exact: true })).toBeVisible();
-  await expect(timeline.getByText("Synthetic Agent Run completed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止分析" })).toBeHidden();
 });

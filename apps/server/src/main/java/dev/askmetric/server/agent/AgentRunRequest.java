@@ -35,8 +35,8 @@ public class AgentRunRequest {
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
         }
-        if (eventType != AgentRunEventType.REQUESTED) {
-            throw new IllegalArgumentException("eventType must be agent.run.requested");
+        if (eventType != AgentRunEventType.REQUESTED && eventType != AgentRunEventType.CANCEL_REQUESTED) {
+            throw new IllegalArgumentException("eventType must request starting or cancelling an Agent Run");
         }
         if (sequence < 1) {
             throw new IllegalArgumentException("sequence must be positive");

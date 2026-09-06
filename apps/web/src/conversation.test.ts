@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMessage, loadConversation, loadConversations, subscribeToAgentRun, watchAgentRun } from "./conversation";
+import { cancelAgentRun, createMessage, loadConversation, loadConversations, subscribeToAgentRun, watchAgentRun } from "./conversation";
 
 describe("Conversation persistence client", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -115,6 +115,30 @@ describe("Conversation persistence client", () => {
     expect(accepted.analysisTask?.sourceAgentRunId).toBe("run-2");
   });
 
+  it("cancels an active Agent Run in its Conversation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      eventId: "event-cancelled",
+      schemaVersion: 1,
+      eventType: "agent.run.cancelled",
+      sequence: 3,
+      occurredAt: "2026-09-06T02:00:00Z",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      message: "分析已取消",
+      source: "java",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cancelled = await cancelAgentRun("token", "workspace-demo", "conversation-1", "run-1");
+
+    const submitted = request(fetchMock, 0);
+    expect(submitted.method).toBe("POST");
+    expect(submitted.url.endsWith("/api/v1/conversations/conversation-1/runs/run-1/cancel")).toBe(true);
+    expect(submitted.headers.get("Authorization")).toBe("Bearer token");
+    expect(submitted.headers.get("X-Workspace-Id")).toBe("workspace-demo");
+    expect(cancelled.eventType).toBe("agent.run.cancelled");
+  });
+
   it("subscribes to a run from the last received sequence", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -155,6 +179,24 @@ describe("Conversation persistence client", () => {
 
     const reconnected = fetchMock.mock.calls[1][1] as RequestInit;
     expect(new Headers(reconnected.headers).get("Last-Event-ID")).toBe("2");
+  });
+
+  it("stops reconnecting after a cancelled event", async () => {
+    const cancelled = "id: 3\nevent: agent.run.cancelled\ndata: {\"eventId\":\"event-3\",\"schemaVersion\":1,\"eventType\":\"agent.run.cancelled\",\"sequence\":3,\"occurredAt\":\"2026-09-06T12:00:00Z\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"message\":\"cancelled\",\"source\":\"java\"}\n\n";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(cancelled, { headers: { "Content-Type": "text/event-stream" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const received: string[] = [];
+
+    const stop = watchAgentRun("token", "workspace-demo", "conversation-1", "run-1", 2, (event) => {
+      received.push(event.eventType);
+    });
+    await vi.waitFor(() => expect(received).toEqual(["agent.run.cancelled"]));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    stop();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

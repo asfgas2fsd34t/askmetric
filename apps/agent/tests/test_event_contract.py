@@ -174,3 +174,40 @@ def test_listener_retries_when_progress_delivery_is_not_confirmed():
         "agent.run.progress",
         "agent.run.completed",
     ]
+
+
+def test_listener_does_not_complete_after_receiving_cancellation():
+    run_request = {
+        "eventId": "evt-run",
+        "schemaVersion": 1,
+        "eventType": "agent.run.requested",
+        "sequence": 1,
+        "occurredAt": "2026-09-06T02:00:00Z",
+        "conversationId": "conv-1",
+        "runId": "run-1",
+        "message": "analyse MRR",
+    }
+    cancel_request = {
+        **run_request,
+        "eventId": "evt-cancel",
+        "eventType": "agent.run.cancel.requested",
+        "sequence": 2,
+        "message": "用户主动停止分析",
+    }
+
+    class CancelAfterProgressProducer:
+        def __init__(self):
+            self.messages = []
+            self.listener = None
+
+        def send(self, message):
+            self.messages.append(message)
+            if json.loads(message.body)["eventType"] == "agent.run.progress":
+                self.listener.consume(SimpleNamespace(body=json.dumps(cancel_request).encode("utf-8")))
+
+    producer = CancelAfterProgressProducer()
+    listener = AgentListener(producer)
+    producer.listener = listener
+
+    assert listener.consume(SimpleNamespace(body=json.dumps(run_request).encode("utf-8"))) is ConsumeResult.SUCCESS
+    assert [json.loads(message.body)["eventType"] for message in producer.messages] == ["agent.run.progress"]

@@ -32,6 +32,7 @@ class AgentRunEventType(str, Enum):
     """Agent Run 生命周期事件及其 JSON 传输值。"""
 
     REQUESTED = "agent.run.requested"  # Java 请求 Python 执行 Agent Run。
+    CANCEL_REQUESTED = "agent.run.cancel.requested"  # Java 请求 Python 停止 Agent Run。
     ACCEPTED = "agent.run.accepted"  # 运行已进入队列。
     PROGRESS = "agent.run.progress"  # Python 正在处理运行。
     COMPLETED = "agent.run.completed"  # 运行已产生最终结果。
@@ -126,7 +127,10 @@ class AgentListener(MessageListener):
         try:
             request = json.loads(message.body.decode("utf-8"))
             validate_request(request)
-            self._emit_run(request)
+            if request["eventType"] == AgentRunEventType.CANCEL_REQUESTED.value:
+                self._cancel_run(request)
+            else:
+                self._emit_run(request)
             return ConsumeResult.SUCCESS
         except Exception:
             LOG.exception("处理 Agent Run 请求失败")
@@ -144,25 +148,37 @@ class AgentListener(MessageListener):
         with self._state_lock:
             # RocketMQ 至少一次投递；此状态机保证同一请求在本进程内最多发出一组进度和终态。
             state = self._states.setdefault(
-                request["eventId"],
-                {"progress": False, "completed": False, "failed": False},
+                request["runId"],
+                {"progress": False, "completed": False, "failed": False, "cancelled": False},
             )
-            if state["failed"] or state["completed"]:
+            if state["failed"] or state["completed"] or state["cancelled"]:
                 return
             if not state["progress"]:
                 self.publish(event(request, AgentRunEventType.PROGRESS, 2, "Python Synthetic Agent 正在处理"))
                 state["progress"] = True
+        with self._state_lock:
+            if state["cancelled"]:
+                return
             if not state["completed"]:
                 self.publish(event(request, AgentRunEventType.COMPLETED, 3, "Synthetic Agent Run completed"))
                 state["completed"] = True
 
+    def _cancel_run(self, request: dict) -> None:
+        with self._state_lock:
+            state = self._states.setdefault(
+                request["runId"],
+                {"progress": False, "completed": False, "failed": False, "cancelled": False},
+            )
+            if not state["completed"] and not state["failed"]:
+                state["cancelled"] = True
+
     def _emit_failure(self, request: dict) -> None:
         with self._state_lock:
             state = self._states.setdefault(
-                request["eventId"],
-                {"progress": False, "completed": False, "failed": False},
+                request["runId"],
+                {"progress": False, "completed": False, "failed": False, "cancelled": False},
             )
-            if state["failed"] or state["completed"]:
+            if state["failed"] or state["completed"] or state["cancelled"]:
                 return
             if not state["progress"]:
                 # 先确认序号 2 的进度事件，才能安全地产生序号 3 的失败终态。

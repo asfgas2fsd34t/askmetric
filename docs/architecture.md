@@ -97,7 +97,7 @@ Java 服务是一个 Spring Boot 模块化单体。Spring Modulith 校验以下�
                          |
                          +-------> completed | failed | cancelled
 
-Agent 运行事件：accepted -> progress -> completed | failed
+Agent 运行事件：accepted -> progress -> completed | failed | cancelled
 ```
 
 ## Agent 工作流
@@ -121,7 +121,7 @@ Python Runtime 使用一个有边界的 LangGraph 状态图：
 
 Java 在一个数据库事务中提交 Agent 运行和 Outbox 记录。Publisher 定期领取带租约的 Outbox 记录，将版本化 JSON 事件发送到 RocketMQ 5；发布成功后标记完成，临时失败使用退避重试，超过上限后进入死信状态。相同请求事件使用稳定 eventId，发布器允许至少一次投递而不依赖 exactly-once。
 
-消息采用 at-least-once 语义。事件信封包含 `eventId`、`schemaVersion`、`runId` 和序号。Java 消费 Python 事件时先写入 `agent_run_event`，由 `eventId`、聚合序号和生命周期迁移条件保证幂等与顺序，再同步到 SSE 内存投影；SSE 连接建立或应用重启后从数据库恢复。重复 eventId、旧序号和乱序事件不会重复推进运行。用户提交消息时可提供 `Idempotency-Key`，Java 在用户、Workspace 和 Conversation 范围内保存请求指纹和首次响应，网络重试不会重复创建 Message、Agent Run 或 Analysis Task。重放从 Checkpoint 恢复，且不能重复执行已批准操作。
+消息采用 at-least-once 语义。事件信封包含 `eventId`、`schemaVersion`、`runId` 和序号。Java 消费 Python 事件时先写入 `agent_run_event`，由 `eventId`、聚合序号和生命周期迁移条件保证幂等与顺序；事务提交后从数据库按序向当前 SSE 连接补发缺失事件，内存不保存事件副本。重复 eventId、旧序号和乱序事件不会重复推进运行。用户提交消息时可提供 `Idempotency-Key`，Java 在用户、Workspace 和 Conversation 范围内保存请求指纹和首次响应，网络重试不会重复创建 Message、Agent Run 或 Analysis Task。重放从 Checkpoint 恢复，且不能重复执行已批准操作。
 
 早期 T01 的直接创建 Agent Run 入口已移除；`/runs/{runId}/events` SSE 路径暂时保留，供 Conversation Agent Run 使用。业务 Conversation `/messages` 路径使用数据库 Agent Run 与 Transactional Outbox。
 

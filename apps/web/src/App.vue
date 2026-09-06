@@ -7,12 +7,14 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Square,
   UserRound,
 } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import { accessToken, logout } from "./auth";
 import {
+  cancelAgentRun,
   createConversation,
   createMessage,
   loadConversation,
@@ -30,12 +32,18 @@ const activeConversation = ref<ConversationSnapshot>();
 const loading = ref(true);
 const conversationLoading = ref(false);
 const sending = ref(false);
+const cancellingRunId = ref("");
 const error = ref("");
 const conversationError = ref("");
 const draft = ref("");
 const runSubscriptions = new Map<string, () => void>();
 const activeAgentRuns = computed(() => activeConversation.value?.agentRuns.filter((run) => !runIsTerminal(run)) ?? []);
 const activeAgentRun = computed(() => activeAgentRuns.value.at(-1));
+const activeAnalysisRun = computed(() => activeAgentRuns.value.findLast((run) => Boolean(run.analysisTaskId)));
+const latestCancellation = computed(() => activeConversation.value?.agentRuns
+  .flatMap((run) => run.auditEvents)
+  .filter((event) => event.eventType === "agent.run.cancelled")
+  .at(-1));
 
 function stopRunSubscriptions() {
   runSubscriptions.forEach((stop) => stop());
@@ -44,7 +52,7 @@ function stopRunSubscriptions() {
 
 function runIsTerminal(run: NonNullable<typeof activeConversation.value>["agentRuns"][number]) {
   const type = run.auditEvents.at(-1)?.eventType;
-  return type === "agent.run.completed" || type === "agent.run.failed";
+  return type === "agent.run.completed" || type === "agent.run.failed" || type === "agent.run.cancelled";
 }
 
 async function activateConversation(snapshot: ConversationSnapshot | undefined, expectedConversationId?: string) {
@@ -85,12 +93,33 @@ function applyAgentRunEvent(event: AgentRunEvent) {
   if (!received) return;
   activeConversation.value = { ...snapshot, agentRuns };
 
-  if (event.eventType === "agent.run.completed" || event.eventType === "agent.run.failed") {
+  if (event.eventType === "agent.run.completed"
+    || event.eventType === "agent.run.failed"
+    || event.eventType === "agent.run.cancelled") {
     runSubscriptions.get(event.runId)?.();
     runSubscriptions.delete(event.runId);
     if (session.value) {
       void refreshCompletedRun(session.value.currentMembership.workspaceId, snapshot.conversationId);
     }
+  }
+}
+
+async function cancelRun(runId: string) {
+  if (!session.value || !activeConversation.value || cancellingRunId.value) return;
+  cancellingRunId.value = runId;
+  conversationError.value = "";
+  try {
+    const event = await cancelAgentRun(
+      await accessToken(),
+      session.value.currentMembership.workspaceId,
+      activeConversation.value.conversationId,
+      runId,
+    );
+    applyAgentRunEvent(event);
+  } catch {
+    conversationError.value = "无法停止分析";
+  } finally {
+    cancellingRunId.value = "";
   }
 }
 
@@ -344,6 +373,20 @@ onUnmounted(stopRunSubscriptions);
               <strong>{{ activeAgentRun.auditEvents.at(-1)?.message ?? "正在处理" }}</strong>
               <small v-if="activeAgentRuns.length > 1">另有 {{ activeAgentRuns.length - 1 }} 个任务正在处理</small>
             </div>
+            <button
+              v-if="activeAnalysisRun"
+              class="stop-run-button"
+              type="button"
+              title="停止分析"
+              aria-label="停止分析"
+              :disabled="cancellingRunId === activeAnalysisRun.runId"
+              @click="cancelRun(activeAnalysisRun.runId)"
+            >
+              <Square :size="13" aria-hidden="true" />
+            </button>
+          </div>
+          <div v-if="latestCancellation" class="agent-run-cancelled" role="status">
+            {{ latestCancellation.message }}
           </div>
           <form class="message-composer" @submit.prevent="submitMessage">
             <label class="sr-only" for="message-draft">消息</label>

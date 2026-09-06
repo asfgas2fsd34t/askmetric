@@ -140,6 +140,37 @@ paths:
           description: The Conversation is not available in the current Workspace
         "404":
           description: The Agent Run is not in the Conversation
+  /api/v1/conversations/{conversationId}/runs/{runId}/cancel:
+    post:
+      operationId: cancelAgentRun
+      summary: Cancel an active analysis Agent Run and its Analysis Task
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelAgentRunRequest"
+      responses:
+        "200":
+          description: Persisted cancellation event containing the cancelled stage and reason
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRunEvent"
+        "400":
+          description: Invalid cancellation reason
+        "403":
+          description: The Conversation is not available in the current Workspace
+        "404":
+          description: The Agent Run is not in the Conversation
+        "409":
+          description: The Agent Run is already terminal or is not an analysis run
 components:
   parameters:
     WorkspaceId:
@@ -353,7 +384,7 @@ components:
           format: int64
         eventType:
           type: string
-          enum: [agent.run.accepted, agent.run.progress, agent.run.completed, agent.run.failed]
+          enum: [agent.run.accepted, agent.run.progress, agent.run.completed, agent.run.failed, agent.run.cancelled]
         occurredAt:
           type: string
           format: date-time
@@ -389,3 +420,10 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+    CancelAgentRunRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500

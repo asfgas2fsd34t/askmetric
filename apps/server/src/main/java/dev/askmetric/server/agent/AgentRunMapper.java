@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
@@ -45,14 +46,17 @@ public interface AgentRunMapper {
             """)
     boolean sequenceExists(@Param("runId") String runId, @Param("sequence") long sequence);
 
-    /** 获取内部事件所属 Workspace，用于重建 SSE 内存投影。 */
+    /** 判断运行是否已经到达不可继续推进的终态。 */
     @Select("""
-            select workspace_id
-            from agent_run
-            where run_id = #{runId} and conversation_id = #{conversationId}
+            select coalesce((
+                select event_type in ('COMPLETED', 'FAILED', 'CANCELLED')
+                from agent_run_event
+                where run_id = #{runId}
+                order by sequence desc
+                limit 1
+            ), false)
             """)
-    Optional<String> workspaceId(
-            @Param("conversationId") String conversationId, @Param("runId") String runId);
+    boolean isTerminal(@Param("runId") String runId);
 
     /**
      * 为已授权用户在 Conversation 中创建运行。
@@ -129,33 +133,31 @@ public interface AgentRunMapper {
 
     /** 持久化已通过契约校验的 Python 事件；eventId 和 runId/sequence 都参与幂等约束。 */
     @Insert("""
+            with locked_run as (
+                select run.run_id
+                from agent_run run
+                where run.run_id = #{runId}
+                  and run.conversation_id = #{conversationId}
+                for update
+            ), latest as (
+                select previous.sequence, previous.event_type
+                from agent_run_event previous
+                join locked_run run on run.run_id = previous.run_id
+                order by previous.sequence desc
+                limit 1
+            )
             insert into agent_run_event (
                 event_id, run_id, sequence, event_type, occurred_at, message, source
             )
             select #{eventId}, run.run_id, #{sequence}, #{eventType}, #{occurredAt}, #{message}, #{source}
-            from agent_run run
-            where run.run_id = #{runId}
-              and run.conversation_id = #{conversationId}
-              and #{sequence} = (
-                  select coalesce(max(previous.sequence), 0) + 1
-                  from agent_run_event previous
-                  where previous.run_id = run.run_id
+            from locked_run run
+            join latest on true
+            where #{sequence} = latest.sequence + 1
+              and (
+                  (latest.event_type = 'ACCEPTED' and #{eventType} in ('PROGRESS', 'FAILED'))
+                  or (latest.event_type = 'PROGRESS' and #{eventType} in ('PROGRESS', 'COMPLETED', 'FAILED'))
               )
-              and exists (
-                  select 1
-                  from agent_run_event previous
-                  where previous.run_id = run.run_id
-                    and previous.sequence = (
-                        select max(latest.sequence)
-                        from agent_run_event latest
-                        where latest.run_id = run.run_id
-                    )
-                    and (
-                        (previous.event_type = 'ACCEPTED' and #{eventType} in ('PROGRESS', 'FAILED'))
-                        or (previous.event_type = 'PROGRESS' and #{eventType} in ('PROGRESS', 'COMPLETED', 'FAILED'))
-                    )
-              )
-            on conflict (event_id) do nothing
+            on conflict do nothing
             """)
     int appendExternalEvent(
             @Param("eventId") String eventId,
@@ -167,9 +169,67 @@ public interface AgentRunMapper {
             @Param("message") String message,
             @Param("source") AgentRunEventSource source);
 
+    /**
+     * 锁定运行与关联任务，将二者原子地取消，并返回用于 SSE 的终态事件。
+     * 已终态或没有 Analysis Task 的运行不会发生变化。
+     */
+    @ResultMap("agentRunEvent")
+    @Select("""
+            with cancellable as (
+                select run.run_id, run.conversation_id, task.analysis_task_id,
+                       latest.sequence, latest.message
+                from agent_run run
+                join analysis_task task on task.analysis_task_id = run.analysis_task_id
+                join workspace_membership membership on membership.workspace_id = run.workspace_id
+                join lateral (
+                    select event.sequence, event.event_type, event.message
+                    from agent_run_event event
+                    where event.run_id = run.run_id
+                    order by event.sequence desc
+                    limit 1
+                ) latest on true
+                where run.run_id = #{runId}
+                  and run.conversation_id = #{conversationId}
+                  and run.workspace_id = #{workspaceId}
+                  and membership.user_subject = #{userSubject}
+                  and latest.event_type in ('ACCEPTED', 'PROGRESS')
+                  and task.status in ('ACTIVE', 'WAITING_FOR_INPUT', 'WAITING_FOR_APPROVAL')
+                for update of run, task
+            ), cancelled_event as (
+                insert into agent_run_event (
+                    event_id, run_id, sequence, event_type, message, source
+                )
+                select #{eventId}, run_id, sequence + 1, 'CANCELLED',
+                       concat('分析已在“', left(message, 3000), '”阶段取消：', #{reason}),
+                       'JAVA'
+                from cancellable
+                returning event_id, run_id, sequence, event_type, occurred_at, message, source
+            ), cancelled_task as (
+                update analysis_task task
+                set status = 'CANCELLED'
+                from cancellable, cancelled_event
+                where task.analysis_task_id = cancellable.analysis_task_id
+                returning task.analysis_task_id
+            )
+            select event.event_id, 1 as schema_version, event.run_id, event.sequence,
+                   event.event_type, event.occurred_at, cancellable.conversation_id,
+                   event.message, event.source
+            from cancelled_event event
+            join cancellable on cancellable.run_id = event.run_id
+            join cancelled_task task on task.analysis_task_id = cancellable.analysis_task_id
+            """)
+    Optional<AgentRunEvent> cancelRun(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("conversationId") String conversationId,
+            @Param("runId") String runId,
+            @Param("eventId") String eventId,
+            @Param("reason") String reason);
+
     /** 读取 Agent Run 的完整事件，用于 SSE 连接建立或应用重启后的恢复。 */
     @Results(id = "agentRunEvent", value = {
             @Result(column = "event_id", property = "eventId"),
+            @Result(column = "schema_version", property = "schemaVersion"),
             @Result(column = "run_id", property = "runId"),
             @Result(column = "sequence", property = "sequence"),
             @Result(column = "event_type", property = "eventType"),
@@ -179,7 +239,7 @@ public interface AgentRunMapper {
             @Result(column = "source", property = "source")
     })
     @Select("""
-            select event.event_id, event.run_id, event.sequence, event.event_type,
+            select event.event_id, 1 as schema_version, event.run_id, event.sequence, event.event_type,
                    event.occurred_at, run.conversation_id, event.message, event.source
             from agent_run_event event
             join agent_run run on run.run_id = event.run_id

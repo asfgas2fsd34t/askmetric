@@ -14,6 +14,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,8 +67,39 @@ public class AgentRunController {
         }
         // SSE 标准 Last-Event-ID 保存的是已收到的 sequence；仅补放其后的事件。
         SseEmitter emitter = new SseEmitter(120_000L);
-        service.addReplay(workspaceId, conversationId, runId, afterSequence, emitter);
+        service.addReplay(conversationId, runId, afterSequence, emitter);
         return emitter;
+    }
+
+    @PostMapping("/{conversationId}/runs/{runId}/cancel")
+    public AgentRunEvent cancel(
+            @AuthenticationPrincipal Jwt identity,
+            @RequestHeader(value = "X-Workspace-Id", required = false) String requestedWorkspaceId,
+            @PathVariable String conversationId,
+            @PathVariable String runId,
+            @RequestBody(required = false) CancelAgentRunRequest request) {
+        if (runId.isBlank() || conversationId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationId and runId are required");
+        }
+        String reason = request == null || request.getReason() == null || request.getReason().isBlank()
+                ? "用户主动停止分析"
+                : request.getReason().strip();
+        if (reason.length() > 500 || reason.chars().anyMatch(Character::isISOControl)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reason must be at most 500 visible characters");
+        }
+        String workspaceId = workspaceAuthorization
+                .authorizeConversation(
+                        identity,
+                        Optional.ofNullable(requestedWorkspaceId),
+                        conversationId,
+                        WorkspacePermission.CREATE_MESSAGE)
+                .currentWorkspaceId();
+        if (!service.exists(workspaceId, conversationId, runId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent Run not found");
+        }
+        return service.cancel(identity.getSubject(), workspaceId, conversationId, runId, reason)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT, "Agent Run is not an active analysis run"));
     }
 
     @ExceptionHandler(ResponseStatusException.class)
