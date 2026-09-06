@@ -17,7 +17,7 @@
   "properties": {
     "eventId": { "type": "string", "minLength": 1 },
     "schemaVersion": { "const": 1 },
-    "eventType": { "const": "agent.run.requested" },
+    "eventType": { "enum": ["agent.run.requested", "agent.run.cancel.requested"] },
     "sequence": { "type": "integer", "minimum": 1 },
     "occurredAt": { "type": "string", "format": "date-time" },
     "conversationId": { "type": "string", "minLength": 1 },

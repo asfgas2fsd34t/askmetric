@@ -23,6 +23,14 @@ class AgentRunContractValidatorTest {
     }
 
     @Test
+    void acceptsACancellationCommandThatMatchesTheVersionedSchema() {
+        validator.validateRequest(new AgentRunRequest(
+                "cancel-1", 1, AgentRunEventType.CANCEL_REQUESTED, 3,
+                Instant.parse("2026-09-06T02:00:00Z"), "conv-1", "run-1",
+                "用户主动停止分析"));
+    }
+
+    @Test
     void rejectsUnknownEventProperties() throws Exception {
         var payload = objectMapper.readTree("""
                 {

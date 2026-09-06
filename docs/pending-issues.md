@@ -4,17 +4,9 @@
 
 ## 并发与 SSE
 
-### CONC-001 AgentRunStore 使用全局锁追加事件
+### CONC-002 SSE 注册与补发共享同步锁
 
-- **现状**：`AgentRunStore.append` 使用 `synchronized`，锁住整个 Store；事件校验、去重、序号检查、写入和 SSE 广播都在锁内完成。
-- **问题**：不同 `runId` 的事件也会互相阻塞；某个慢 SSE 客户端可能延长锁持有时间，降低并发 Agent Run 的吞吐。
-- **为什么暂缓**：T01 使用内存 Store，优先保证 at-least-once 重投、序号连续和广播顺序；当前没有多运行并发的生产负载。
-- **建议方案**：持久化后使用数据库事务、`eventId` 和 `(runId, sequence)` 唯一约束，并用 `last_sequence` 的乐观并发检查替代 Store 级别锁。SSE 广播放到提交成功之后异步执行。
-- **验收标准**：不同 `runId` 可以并行追加；同一 `runId` 的重复、乱序和并发事件不会破坏序号或终态；慢客户端不会阻塞其他运行。
-
-### CONC-002 registerAndReplay 与 append 共享同步锁
-
-- **现状**：`AgentRunStore.registerAndReplay` 和 `append` 都是 `synchronized`。注册 SSE、补放历史事件和发送补放数据期间，其他运行的事件追加会等待。
+- **现状**：`AgentRunSseHub.registerAndReplay` 和 `publishPersisted` 都是 `synchronized`。注册 SSE、查询并补发数据库事件期间，其他运行的事件推送会等待。
 - **问题**：连接重连或历史事件较多时，重放过程会占用全局锁；网络发送发生在锁内，慢客户端可能阻塞所有 Agent Run 的事件追加。
 - **为什么暂缓**：注册后重放的原子性可以避免事件丢失或顺序错乱，T01 事件量小且只用于技术探针。
 - **建议方案**：改为按 `runId` 隔离订阅状态；使用数据库游标或事件序号进行重放，配合提交后的异步广播。必要时为每个运行建立单线程事件队列，避免在锁内执行网络 I/O。
@@ -22,6 +14,5 @@
 
 ## 处理顺序
 
-1. 完成 `AgentRun`、事件表和 Transactional Outbox 的数据库持久化。
-2. 为 `runId` 并发追加、RocketMQ 重投和 SSE 重连增加集成测试。
-3. 优先解决 CONC-001，再解决 CONC-002；两项都必须通过慢客户端和多运行并发压测。
+1. 为 `runId` 并发追加、RocketMQ 重投和 SSE 重连增加集成测试。
+2. 将 SSE 订阅状态按 `runId` 隔离，并通过慢客户端和多运行并发压测。

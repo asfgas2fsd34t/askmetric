@@ -76,6 +76,23 @@ export async function createMessage(
   return requireData(data, response, "Message creation");
 }
 
+export async function cancelAgentRun(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+  runId: string,
+): Promise<AgentRunEvent> {
+  const { data, response } = await client().POST("/api/v1/conversations/{conversationId}/runs/{runId}/cancel", {
+    headers: headers(accessToken),
+    params: {
+      header: { "X-Workspace-Id": workspaceId },
+      path: { conversationId, runId },
+    },
+    body: { reason: "用户主动停止分析" },
+  });
+  return requireData(data, response, "Agent Run cancellation");
+}
+
 /** Reads one SSE response, replaying only events after {@code afterSequence}. */
 export async function subscribeToAgentRun(
   accessToken: string,
@@ -134,7 +151,9 @@ export function watchAgentRun(
   let terminal = false;
   const receive = (event: AgentRunEvent) => {
     lastSequence = event.sequence;
-    terminal ||= event.eventType === "agent.run.completed" || event.eventType === "agent.run.failed";
+    terminal ||= event.eventType === "agent.run.completed"
+      || event.eventType === "agent.run.failed"
+      || event.eventType === "agent.run.cancelled";
     onEvent(event);
   };
 

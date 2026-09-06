@@ -8,6 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.askmetric.server.agent.AgentRunEvent;
+import dev.askmetric.server.agent.AgentRunEventSource;
+import dev.askmetric.server.agent.AgentRunEventType;
+import dev.askmetric.server.agent.AgentRunService;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -51,6 +56,9 @@ class ConversationControllerIntegrationTest {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    AgentRunService agentRunService;
 
     @Test
     void createsConversationAndRestoresPersistedMessagesInOrder() throws Exception {
@@ -404,6 +412,57 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.analysisTasks.length()").value(1))
                 .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(activeTaskId))
                 .andExpect(jsonPath("$.analysisTasks[0].status").value("active"));
+    }
+
+    @Test
+    void cancelsAnAnalysisRunAndRejectsItsLateCompletion() throws Exception {
+        String conversationId = createConversation("停止分析");
+        String accepted = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"为什么本月 MRR 下降？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = objectMapper.readTree(accepted).at("/agentRun/runId").asText();
+
+        String cancelled = mvc.perform(post(
+                            "/api/v1/conversations/{conversationId}/runs/{runId}/cancel", conversationId, runId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"问题不再需要分析\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventType").value("agent.run.cancelled"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("分析任务已创建")))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("问题不再需要分析")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long cancelSequence = objectMapper.readTree(cancelled).get("sequence").asLong();
+
+        agentRunService.acceptEvent(new AgentRunEvent(
+                "late-completed-" + runId,
+                1,
+                AgentRunEventType.COMPLETED,
+                cancelSequence + 1,
+                Instant.now(),
+                conversationId,
+                runId,
+                "迟到的成功终态",
+                AgentRunEventSource.PYTHON));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("cancelled"))
+                .andExpect(jsonPath("$.agentRuns[0].auditEvents.length()").value(3))
+                .andExpect(jsonPath("$.agentRuns[0].auditEvents[0].eventType").value("agent.run.accepted"))
+                .andExpect(jsonPath("$.agentRuns[0].auditEvents[1].eventType").value("agent.run.progress"))
+                .andExpect(jsonPath("$.agentRuns[0].auditEvents[2].eventType").value("agent.run.cancelled"));
     }
 
     private String createConversation(String title) throws Exception {

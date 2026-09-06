@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversationId}/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel an active analysis Agent Run and its Analysis Task */
+        post: operations["cancelAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -178,7 +195,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.completed" | "agent.run.failed";
+            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.completed" | "agent.run.failed" | "agent.run.cancelled";
             /** Format: date-time */
             occurredAt: string;
             message: string;
@@ -195,6 +212,9 @@ export interface components {
         };
         CreateMessageRequest: {
             content: string;
+        };
+        CancelAgentRunRequest: {
+            reason?: string;
         };
     };
     responses: never;
@@ -441,6 +461,63 @@ export interface operations {
             };
             /** @description The Agent Run is not in the Conversation */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancelAgentRun: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelAgentRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Persisted cancellation event containing the cancelled stage and reason */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunEvent"];
+                };
+            };
+            /** @description Invalid cancellation reason */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Conversation is not available in the current Workspace */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Agent Run is not in the Conversation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Agent Run is already terminal or is not an analysis run */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
