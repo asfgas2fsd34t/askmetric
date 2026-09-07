@@ -71,6 +71,20 @@ PostgreSQL persists Workspace, Workspace Membership, Workspace Policy, and Conve
 bash scripts/smoke-workspace-isolation.sh
 ```
 
+## T13 Demo Warehouse
+
+A separate PostgreSQL Demo Warehouse contains the fixed `mrr-drop-v1` synthetic dataset, covering customer segments, plans, and subscription events from January through June 2025. The planted events reduce June MRR from 480000 cents to 300000 cents. The smoke check reproduces that result and verifies that repeated resets produce identical data:
+
+```bash
+bash scripts/smoke-demo-warehouse.sh
+```
+
+Reset the dataset independently with:
+
+```bash
+bash scripts/reset-demo-warehouse.sh
+```
+
 ## Scope
 
 The first release proves one complete B2B SaaS analysis workflow against deterministic synthetic data. It supports multi-turn conversations, governed SQL, cited RAG, confirmed memory, human-approved MCP actions, reproducible HTML reports, tracing, and public evaluations.

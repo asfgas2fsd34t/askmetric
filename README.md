@@ -71,6 +71,20 @@ Workspace、Workspace Membership、Workspace Policy 和 Conversation 由 Postgre
 bash scripts/smoke-workspace-isolation.sh
 ```
 
+## T13 Demo Warehouse
+
+独立 PostgreSQL Demo Warehouse 保存 `mrr-drop-v1` 固定合成数据集，覆盖 2025 年 1 月至 6 月的客户分层、套餐和订阅事件。已知植入事件会将 6 月 MRR 从 480000 美分降至 300000 美分；验证脚本会复现该结果，并确认重复重置得到完全一致的数据：
+
+```bash
+bash scripts/smoke-demo-warehouse.sh
+```
+
+需要单独恢复初始数据时运行：
+
+```bash
+bash scripts/reset-demo-warehouse.sh
+```
+
 ## 首版范围
 
 首版使用确定性的 B2B SaaS 合成数据，证明一条完整分析链路。它支持多轮对话、受治理的 SQL、带引用的 RAG、经确认的长期记忆、人工审批的 MCP 操作、可重现的 HTML 报告、全链路 Trace 和公开评测。

@@ -1,0 +1,22 @@
+name: T13 演示数据仓库
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/t13-demo-warehouse.yml'
+      - 'infra/demo-warehouse/**'
+      - 'infra/docker-compose.yml'
+      - 'scripts/reset-demo-warehouse.sh'
+      - 'scripts/smoke-demo-warehouse.sh'
+
+jobs:
+  demo-warehouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 120 bash scripts/smoke-demo-warehouse.sh
+      - if: always()
+        run: docker compose -f infra/docker-compose.yml logs --no-color demo-warehouse
+      - if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

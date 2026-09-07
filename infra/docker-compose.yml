@@ -31,6 +31,24 @@ services:
       timeout: 3s
       retries: 20
 
+  demo-warehouse:
+    image: public.ecr.aws/docker/library/postgres:16.10-alpine
+    environment:
+      POSTGRES_DB: askmetric_demo_warehouse
+      POSTGRES_USER: askmetric_demo
+      POSTGRES_PASSWORD: askmetric_demo
+    volumes:
+      - ./demo-warehouse:/demo-warehouse:ro
+      - ./demo-warehouse/reset.sql:/docker-entrypoint-initdb.d/10-reset.sql:ro
+      - askmetric-demo-warehouse:/var/lib/postgresql/data
+    ports:
+      - "${DEMO_WAREHOUSE_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askmetric_demo -d askmetric_demo_warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.4.7
     command: start-dev --import-realm
@@ -176,3 +194,4 @@ services:
 volumes:
   checkpoint-data:
   askmetric-postgres:
+  askmetric-demo-warehouse:
