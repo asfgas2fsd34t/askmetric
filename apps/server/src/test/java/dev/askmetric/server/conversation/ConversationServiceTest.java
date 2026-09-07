@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
+import dev.askmetric.server.agent.AgentRunAuditEvent;
 import dev.askmetric.server.agent.AgentRunIntentRoute;
 import dev.askmetric.server.agent.AgentRunMapper;
 import dev.askmetric.server.agent.AgentRunOutboxMapper;
@@ -19,6 +20,7 @@ import dev.askmetric.server.agent.DeterministicIntentRouter;
 import dev.askmetric.server.agent.PersistedAgentRun;
 import dev.askmetric.server.analysis.AnalysisTask;
 import dev.askmetric.server.analysis.AnalysisTaskMapper;
+import dev.askmetric.server.catalog.MetricDefinitionService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -37,6 +39,7 @@ class ConversationServiceTest {
         AnalysisTaskMapper analysisTaskMapper = mock(AnalysisTaskMapper.class);
         MessageIdempotencyMapper idempotencyMapper = mock(MessageIdempotencyMapper.class);
         AgentRunOutboxMapper outboxMapper = mock(AgentRunOutboxMapper.class);
+        MetricDefinitionService metricDefinitionService = mock(MetricDefinitionService.class);
         AnalysisTask activeTask = analysisTask("analysis-task-1");
         ConversationMessage userMessage = message("message-1", "继续");
         PersistedAgentRun persistedRun = persistedRun("run-1", activeTask.getAnalysisTaskId());
@@ -59,7 +62,9 @@ class ConversationServiceTest {
                 any(AgentRunEventType.class), anyString(), eq(AgentRunEventSource.JAVA)))
                 .thenReturn(1);
         when(agentRunMapper.runs(USER, WORKSPACE, CONVERSATION)).thenAnswer(invocation -> List.of(persistedRun));
-        when(agentRunMapper.auditEvents(eq(USER), eq(WORKSPACE), anyString())).thenReturn(List.of());
+        AgentRunAuditEvent progress = new AgentRunAuditEvent();
+        progress.setEventType(AgentRunEventType.PROGRESS);
+        when(agentRunMapper.auditEvents(eq(USER), eq(WORKSPACE), anyString())).thenReturn(List.of(progress));
         when(outboxMapper.enqueue(anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(1);
 
         ConversationService service = new ConversationService(
@@ -70,6 +75,7 @@ class ConversationServiceTest {
                 outboxMapper,
                 new DeterministicIntentRouter(),
                 new DeterministicChatReply(),
+                metricDefinitionService,
                 new ObjectMapper().findAndRegisterModules(),
                 "askmetric-agent-run-request");
 
@@ -86,6 +92,7 @@ class ConversationServiceTest {
         AnalysisTask task = new AnalysisTask();
         task.setAnalysisTaskId(taskId);
         task.setConversationId(CONVERSATION);
+        task.setGoal("分析收入趋势");
         return task;
     }
 

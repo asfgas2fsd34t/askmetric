@@ -1,0 +1,9 @@
+definitions:
+  - metricDefinitionVersionId: metric_definition_mrr_v3
+    workspaceId: workspace-demo
+    metricKey: mrr
+    displayName: 月度经常性收入（MRR）
+    versionLabel: v3
+    calculationRule: 截至自然月末，累计所有订阅事件中已经月度标准化的 MRR 增减金额
+    timeBoundary: 目标自然月月末，以生效月份不晚于目标月份的订阅事件为准
+    exclusions: 一次性费用、税费、退款和其他非订阅收入

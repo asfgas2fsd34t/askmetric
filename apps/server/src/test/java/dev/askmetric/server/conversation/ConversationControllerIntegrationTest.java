@@ -1,5 +1,6 @@
 package dev.askmetric.server.conversation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,11 +14,13 @@ import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
 import dev.askmetric.server.agent.AgentRunService;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,6 +62,9 @@ class ConversationControllerIntegrationTest {
 
     @Autowired
     AgentRunService agentRunService;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void createsConversationAndRestoresPersistedMessagesInOrder() throws Exception {
@@ -143,8 +149,9 @@ class ConversationControllerIntegrationTest {
 
     @Test
     void replaysTheFirstResponseForAnIdempotentMessageRetry() throws Exception {
+        String conversationId = createConversation("幂等重试");
         String key = "message-retry-001";
-        String first = mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+        String first = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -155,7 +162,7 @@ class ConversationControllerIntegrationTest {
                 .getResponse()
                 .getContentAsString();
 
-        String replay = mvc.perform(post("/api/v1/conversations/conversation-demo/messages")
+        String replay = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -173,7 +180,7 @@ class ConversationControllerIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(replayJson.at("/agentRun/runId").asText())
                 .isEqualTo(firstJson.at("/agentRun/runId").asText());
 
-        mvc.perform(get("/api/v1/conversations/conversation-demo")
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isOk())
@@ -264,11 +271,12 @@ class ConversationControllerIntegrationTest {
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userMessage.content").value("为什么本月 MRR 下降？"))
-                .andExpect(jsonPath("$.assistantMessage").doesNotExist())
+                .andExpect(jsonPath("$.assistantMessage.content", org.hamcrest.Matchers.containsString("MRR v3")))
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
                 .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.95))
                 .andExpect(jsonPath("$.analysisTask.goal").value("为什么本月 MRR 下降？"))
                 .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").doesNotExist())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -310,6 +318,128 @@ class ConversationControllerIntegrationTest {
     }
 
     @Test
+    void presentsTheVersionedMrrDefinitionBeforeStartingAnalysis() throws Exception {
+        String conversationId = createConversation("MRR 口径确认");
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"为什么本月 MRR 下降？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assistantMessage.content", org.hamcrest.Matchers.containsString("MRR v3")))
+                .andExpect(jsonPath("$.assistantMessage.content", org.hamcrest.Matchers.containsString("计算规则")))
+                .andExpect(jsonPath("$.assistantMessage.content", org.hamcrest.Matchers.containsString("时间边界")))
+                .andExpect(jsonPath("$.assistantMessage.content", org.hamcrest.Matchers.containsString("排除项")))
+                .andExpect(jsonPath("$.assistantMessage.content",
+                        org.hamcrest.Matchers.containsString("使用自定义口径")))
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId").doesNotExist())
+                .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").doesNotExist())
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"));
+    }
+
+    @Test
+    void confirmsTheStandardMrrVersionForTheRunAndAnalysisTask() throws Exception {
+        String conversationId = createConversation("标准 MRR 口径");
+        String analysisTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用标准 MRR v3 口径\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assistantMessage").doesNotExist())
+                .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId").value("metric_definition_mrr_v3"))
+                .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").value("metric_definition_mrr_v3"));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].metricDefinitionVersionId")
+                        .value("metric_definition_mrr_v3"))
+                .andExpect(jsonPath("$.agentRuns[1].metricDefinitionVersionId")
+                        .value("metric_definition_mrr_v3"));
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"继续按 Enterprise 客户拆分\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId")
+                        .value("metric_definition_mrr_v3"));
+    }
+
+    @Test
+    void createsAnImmutableCustomMrrVersionForTheRunAndAnalysisTask() throws Exception {
+        String conversationId = createConversation("自定义 MRR 口径");
+        String analysisTaskId = unconfirmedAnalysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        String accepted = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用自定义口径：只统计月末仍处于有效状态的付费订阅\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
+                .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId",
+                        org.hamcrest.Matchers.startsWith("metric_definition_custom_")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String customVersionId = objectMapper.readTree(accepted)
+                .at("/agentRun/metricDefinitionVersionId").asText();
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].metricDefinitionVersionId").value(customVersionId))
+                .andExpect(jsonPath("$.agentRuns[1].metricDefinitionVersionId").value(customVersionId));
+    }
+
+    @Test
+    void adjustsAConfirmedMrrTaskToANewCustomVersion() throws Exception {
+        String conversationId = createConversation("调整 MRR 口径");
+        String analysisTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        String adjusted = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用自定义口径：只统计月末仍处于有效状态的付费订阅\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId",
+                        org.hamcrest.Matchers.startsWith("metric_definition_custom_")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String customVersionId = objectMapper.readTree(adjusted)
+                .at("/agentRun/metricDefinitionVersionId").asText();
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].metricDefinitionVersionId").value(customVersionId));
+
+        Map<String, Object> storedDefinition = jdbcTemplate.queryForMap("""
+                select calculation_rule, time_boundary, exclusions
+                from metric_definition_version
+                where metric_definition_version_id = ?
+                """, customVersionId);
+        assertThat(storedDefinition)
+                .containsEntry("calculation_rule", "只统计月末仍处于有效状态的付费订阅")
+                .containsEntry("time_boundary", "由自定义口径中的完整规则确定")
+                .containsEntry("exclusions", "由自定义口径中的完整规则确定");
+    }
+
+    @Test
     void continuesTheActiveAnalysisTaskWithoutCreatingAnotherTask() throws Exception {
         String conversationId = createConversation("MRR 调查");
         String analysisTaskId = analysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
@@ -323,7 +453,8 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
                 .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
                 .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
-                .andExpect(jsonPath("$.analysisTask").doesNotExist());
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId").value("metric_definition_mrr_v3"))
+                .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").value("metric_definition_mrr_v3"));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
@@ -332,7 +463,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.analysisTasks.length()").value(1))
                 .andExpect(jsonPath("$.analysisTasks[0].analysisTaskId").value(analysisTaskId))
                 .andExpect(jsonPath("$.analysisTasks[0].status").value("active"))
-                .andExpect(jsonPath("$.agentRuns[1].analysisTaskId").value(analysisTaskId));
+                .andExpect(jsonPath("$.agentRuns[2].analysisTaskId").value(analysisTaskId));
     }
 
     @Test
@@ -364,7 +495,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.analysisTasks[0].status").value("waiting_for_input"))
                 .andExpect(jsonPath("$.analysisTasks[1].analysisTaskId").value(currentTaskId))
                 .andExpect(jsonPath("$.analysisTasks[1].status").value("active"))
-                .andExpect(jsonPath("$.agentRuns[1].analysisTaskId").value(currentTaskId));
+                .andExpect(jsonPath("$.agentRuns[2].analysisTaskId").value(currentTaskId));
     }
 
     @Test
@@ -426,7 +557,18 @@ class ConversationControllerIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        String runId = objectMapper.readTree(accepted).at("/agentRun/runId").asText();
+        String analysisTaskId = objectMapper.readTree(accepted).at("/analysisTask/analysisTaskId").asText();
+        String confirmed = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用标准 MRR v3 口径\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.analysisTaskId").value(analysisTaskId))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = objectMapper.readTree(confirmed).at("/agentRun/runId").asText();
 
         String cancelled = mvc.perform(post(
                             "/api/v1/conversations/{conversationId}/runs/{runId}/cancel", conversationId, runId)
@@ -436,7 +578,7 @@ class ConversationControllerIntegrationTest {
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.eventType").value("agent.run.cancelled"))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("分析任务已创建")))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已采用指标定义 v3")))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("问题不再需要分析")))
                 .andReturn()
                 .getResponse()
@@ -459,10 +601,10 @@ class ConversationControllerIntegrationTest {
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.analysisTasks[0].status").value("cancelled"))
-                .andExpect(jsonPath("$.agentRuns[0].auditEvents.length()").value(3))
-                .andExpect(jsonPath("$.agentRuns[0].auditEvents[0].eventType").value("agent.run.accepted"))
-                .andExpect(jsonPath("$.agentRuns[0].auditEvents[1].eventType").value("agent.run.progress"))
-                .andExpect(jsonPath("$.agentRuns[0].auditEvents[2].eventType").value("agent.run.cancelled"));
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents.length()").value(3))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[0].eventType").value("agent.run.accepted"))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[1].eventType").value("agent.run.progress"))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[2].eventType").value("agent.run.cancelled"));
     }
 
     private String createConversation(String title) throws Exception {
@@ -479,6 +621,18 @@ class ConversationControllerIntegrationTest {
     }
 
     private String analysisTaskIdFor(String conversationId, String content) throws Exception {
+        String analysisTaskId = unconfirmedAnalysisTaskIdFor(conversationId, content);
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用标准 MRR v3 口径\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId").value("metric_definition_mrr_v3"));
+        return analysisTaskId;
+    }
+
+    private String unconfirmedAnalysisTaskIdFor(String conversationId, String content) throws Exception {
         String response = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
                         .contentType(MediaType.APPLICATION_JSON)

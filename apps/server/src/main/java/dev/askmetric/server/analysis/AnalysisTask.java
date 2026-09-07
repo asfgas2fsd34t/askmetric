@@ -17,6 +17,8 @@ public class AnalysisTask {
     private AnalysisTaskStatus status;
     /** 创建此 Analysis Task 的 Agent Run 标识。 */
     private String sourceAgentRunId;
+    /** 业务用户为当前 Analysis Task 确认的指标定义版本。 */
+    private String metricDefinitionVersionId;
     /** 创建时间。 */
     private Instant createdAt;
 }

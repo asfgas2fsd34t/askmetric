@@ -175,6 +175,7 @@ export interface components {
             intentRoute: "chat" | "analysis" | "task_control" | "approval";
             intentConfidence: number;
             analysisTaskId?: string | null;
+            metricDefinitionVersionId?: string | null;
             /** Format: date-time */
             createdAt: string;
             auditEvents: components["schemas"]["AgentRunAuditEvent"][];
@@ -186,6 +187,7 @@ export interface components {
             /** @enum {string} */
             status: "active" | "waiting_for_input" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
             sourceAgentRunId: string;
+            metricDefinitionVersionId?: string | null;
             /** Format: date-time */
             createdAt: string;
         };

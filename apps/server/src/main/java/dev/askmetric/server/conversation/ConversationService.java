@@ -16,9 +16,13 @@ import dev.askmetric.server.analysis.AnalysisTask;
 import dev.askmetric.server.analysis.AnalysisTaskEventType;
 import dev.askmetric.server.analysis.AnalysisTaskMapper;
 import dev.askmetric.server.analysis.AnalysisTaskStatus;
+import dev.askmetric.server.catalog.MetricDefinitionService;
+import dev.askmetric.server.catalog.MetricDefinitionVersion;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -31,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationService {
     private static final int MAX_TITLE_LENGTH = 200;
     private static final int MAX_MESSAGE_LENGTH = 4000;
+    private static final Pattern CUSTOM_METRIC_DEFINITION = Pattern.compile(
+            "自定义口径\\s*(?:为|是|[:：])?\\s*(.+)", Pattern.DOTALL);
 
     private final ConversationMapper mapper;
     private final AgentRunMapper agentRunMapper;
@@ -39,6 +45,7 @@ public class ConversationService {
     private final AgentRunOutboxMapper outboxMapper;
     private final DeterministicIntentRouter intentRouter;
     private final DeterministicChatReply deterministicChatReply;
+    private final MetricDefinitionService metricDefinitionService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
 
@@ -50,6 +57,7 @@ public class ConversationService {
             AgentRunOutboxMapper outboxMapper,
             DeterministicIntentRouter intentRouter,
             DeterministicChatReply deterministicChatReply,
+            MetricDefinitionService metricDefinitionService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
         this.mapper = mapper;
@@ -59,6 +67,7 @@ public class ConversationService {
         this.outboxMapper = outboxMapper;
         this.intentRouter = intentRouter;
         this.deterministicChatReply = deterministicChatReply;
+        this.metricDefinitionService = metricDefinitionService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
     }
@@ -142,7 +151,8 @@ public class ConversationService {
         } else {
             processed = completeChat(userSubject, workspaceId, conversationId, content, userMessage, runId);
         }
-        if (processed.getAgentRun().getAnalysisTaskId() != null) {
+        if (processed.getAgentRun().getAnalysisTaskId() != null
+                && !processed.getAgentRun().getAuditEvents().getLast().getEventType().isTerminal()) {
             enqueueAnalysisRun(conversationId, content, processed.getAgentRun().getRunId());
         }
         completeIdempotency(reservation, processed);
@@ -354,12 +364,113 @@ public class ConversationService {
         if (agentRunMapper.linkAnalysisTask(userSubject, workspaceId, runId, activeTask.getAnalysisTaskId()) != 1) {
             throw new AccessDeniedException("Analysis Task not found in Workspace");
         }
+        Optional<MetricDefinitionVersion> standardDefinition = mrrDefinition(
+                userSubject, workspaceId, activeTask.getGoal());
+        if (standardDefinition.isPresent()
+                && (activeTask.getMetricDefinitionVersionId() == null || explicitlySelectsMetric(userMessage.getContent()))) {
+            return selectMrrDefinition(
+                    userSubject,
+                    workspaceId,
+                    conversationId,
+                    userMessage,
+                    runId,
+                    activeTask,
+                    standardDefinition.orElseThrow());
+        }
+        if (activeTask.getMetricDefinitionVersionId() != null
+                && agentRunMapper.bindMetricDefinition(
+                                userSubject,
+                                workspaceId,
+                                runId,
+                                activeTask.getAnalysisTaskId(),
+                                activeTask.getMetricDefinitionVersionId())
+                        != 1) {
+            throw new AccessDeniedException("Metric Definition not found in Workspace");
+        }
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS, "正在继续当前分析任务");
         return new MessageProcessed(
                 userMessage,
                 null,
                 persistedRun(userSubject, workspaceId, conversationId, runId),
                 activeTask);
+    }
+
+    private MessageProcessed selectMrrDefinition(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            ConversationMessage userMessage,
+            String runId,
+            AnalysisTask activeTask,
+            MetricDefinitionVersion standardDefinition) {
+        String content = userMessage.getContent();
+        Optional<String> customRule = customMetricRule(content);
+        MetricDefinitionVersion selected;
+        if (customRule.isPresent()) {
+            selected = metricDefinitionService.createCustom(
+                    userSubject, workspaceId, standardDefinition, customRule.orElseThrow());
+        } else if (confirmsStandardMetric(content)) {
+            selected = standardDefinition;
+        } else {
+            ConversationMessage assistantMessage = mapper.appendMessage(
+                            userSubject,
+                            workspaceId,
+                            conversationId,
+                            "message_" + UUID.randomUUID(),
+                            "assistant",
+                            null,
+                            confirmationPrompt(standardDefinition))
+                    .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
+            appendAuditEvent(userSubject, workspaceId, runId, 2,
+                    AgentRunEventType.COMPLETED, "尚未确认指标口径，继续等待业务用户输入");
+            return new MessageProcessed(
+                    userMessage,
+                    assistantMessage,
+                    persistedRun(userSubject, workspaceId, conversationId, runId),
+                    activeTask);
+        }
+        bindMetricDefinition(userSubject, workspaceId, runId, activeTask, selected);
+        appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS,
+                "已采用指标定义 " + selected.getVersionLabel());
+        return new MessageProcessed(
+                userMessage,
+                null,
+                persistedRun(userSubject, workspaceId, conversationId, runId),
+                activeTask);
+    }
+
+    private void bindMetricDefinition(
+            String userSubject,
+            String workspaceId,
+            String runId,
+            AnalysisTask activeTask,
+            MetricDefinitionVersion selected) {
+        String taskId = activeTask.getAnalysisTaskId();
+        String versionId = selected.getMetricDefinitionVersionId();
+        if (analysisTaskMapper.bindMetricDefinition(userSubject, workspaceId, taskId, versionId) != 1) {
+            throw new AccessDeniedException("Metric Definition not found in Workspace");
+        }
+        if (agentRunMapper.bindMetricDefinition(userSubject, workspaceId, runId, taskId, versionId) != 1) {
+            throw new AccessDeniedException("Metric Definition not found in Workspace");
+        }
+        activeTask.setMetricDefinitionVersionId(versionId);
+    }
+
+    private static boolean confirmsStandardMetric(String content) {
+        return content.contains("标准") && content.contains("口径");
+    }
+
+    private static boolean explicitlySelectsMetric(String content) {
+        return confirmsStandardMetric(content) || customMetricRule(content).isPresent();
+    }
+
+    private static Optional<String> customMetricRule(String content) {
+        Matcher matcher = CUSTOM_METRIC_DEFINITION.matcher(content);
+        if (!matcher.find()) {
+            return Optional.empty();
+        }
+        String rule = matcher.group(1).strip();
+        return rule.isEmpty() ? Optional.empty() : Optional.of(rule);
     }
 
     private MessageProcessed switchAnalysisTask(
@@ -424,19 +535,71 @@ public class ConversationService {
             throw new AccessDeniedException("Analysis Task not found in Workspace");
         }
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS, "分析任务已创建");
+        long nextSequence = 3;
         if (previousAnalysisTaskId != null) {
             recordTaskSwitch(userSubject, workspaceId, conversationId, runId, previousAnalysisTaskId, analysisTaskId);
-            appendAuditEvent(userSubject, workspaceId, runId, 3, AgentRunEventType.PROGRESS, "已切换到新的分析任务");
+            appendAuditEvent(userSubject, workspaceId, runId, nextSequence++,
+                    AgentRunEventType.PROGRESS, "已切换到新的分析任务");
         }
-        AnalysisTask analysisTask = analysisTaskMapper.tasks(userSubject, workspaceId, conversationId).stream()
-                .filter(candidate -> analysisTaskId.equals(candidate.getAnalysisTaskId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Persisted Analysis Task was not found"));
+        Optional<MetricDefinitionVersion> standardDefinition = mrrDefinition(
+                userSubject, workspaceId, goal);
+        if (standardDefinition.isPresent()) {
+            ConversationMessage assistantMessage = mapper.appendMessage(
+                            userSubject,
+                            workspaceId,
+                            conversationId,
+                            "message_" + UUID.randomUUID(),
+                            "assistant",
+                            null,
+                            confirmationPrompt(standardDefinition.orElseThrow()))
+                    .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
+            appendAuditEvent(userSubject, workspaceId, runId, nextSequence,
+                    AgentRunEventType.COMPLETED, "已展示标准指标定义，等待业务用户确认口径");
+            AnalysisTask analysisTask = persistedAnalysisTask(
+                    userSubject, workspaceId, conversationId, analysisTaskId);
+            return new MessageProcessed(
+                    userMessage,
+                    assistantMessage,
+                    persistedRun(userSubject, workspaceId, conversationId, runId),
+                    analysisTask);
+        }
+        AnalysisTask analysisTask = persistedAnalysisTask(userSubject, workspaceId, conversationId, analysisTaskId);
         return new MessageProcessed(
                 userMessage,
                 null,
                 persistedRun(userSubject, workspaceId, conversationId, runId),
                 analysisTask);
+    }
+
+    private AnalysisTask persistedAnalysisTask(
+            String userSubject, String workspaceId, String conversationId, String analysisTaskId) {
+        return analysisTaskMapper.tasks(userSubject, workspaceId, conversationId).stream()
+                .filter(candidate -> analysisTaskId.equals(candidate.getAnalysisTaskId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Persisted Analysis Task was not found"));
+    }
+
+    private Optional<MetricDefinitionVersion> mrrDefinition(
+            String userSubject, String workspaceId, String goal) {
+        if (!goal.toLowerCase(java.util.Locale.ROOT).contains("mrr")
+                && !goal.contains("月度经常性收入")) {
+            return Optional.empty();
+        }
+        return metricDefinitionService.latestStandard(userSubject, workspaceId, "mrr");
+    }
+
+    private static String confirmationPrompt(MetricDefinitionVersion definition) {
+        return ("开始查询前，请确认是否使用语义目录中的 %s %s（%s）：计算规则：%s；时间边界：%s；排除项：%s。"
+                        + "回复“使用标准 %s %s 口径”，或“使用自定义口径：你的完整规则”。")
+                .formatted(
+                        definition.getMetricKey().toUpperCase(java.util.Locale.ROOT),
+                        definition.getVersionLabel(),
+                        definition.getDisplayName(),
+                        definition.getCalculationRule(),
+                        definition.getTimeBoundary(),
+                        definition.getExclusions(),
+                        definition.getMetricKey().toUpperCase(java.util.Locale.ROOT),
+                        definition.getVersionLabel());
     }
 
     private void recordTaskSwitch(

@@ -17,7 +17,8 @@ public interface AnalysisTaskMapper {
     @ResultMap("analysisTask")
     @Select("""
             select task.analysis_task_id, task.conversation_id, task.goal,
-                   task.status, task.source_agent_run_id, task.created_at
+                   task.status, task.source_agent_run_id, task.metric_definition_version_id,
+                   task.created_at
             from analysis_task task
             join workspace_membership membership on membership.workspace_id = task.workspace_id
             where task.conversation_id = #{conversationId}
@@ -76,6 +77,28 @@ public interface AnalysisTaskMapper {
             @Param("analysisTaskId") String analysisTaskId,
             @Param("status") AnalysisTaskStatus status);
 
+    /** 为 Analysis Task 绑定同一 Workspace 中的不可变指标版本；用户调整口径时更新版本引用。 */
+    @Update("""
+            update analysis_task task
+            set metric_definition_version_id = #{metricDefinitionVersionId}
+            where task.analysis_task_id = #{analysisTaskId}
+              and task.workspace_id = #{workspaceId}
+              and exists (
+                  select 1
+                  from metric_definition_version definition
+                  join workspace_membership membership
+                    on membership.workspace_id = definition.workspace_id
+                  where definition.metric_definition_version_id = #{metricDefinitionVersionId}
+                    and definition.workspace_id = task.workspace_id
+                    and membership.user_subject = #{userSubject}
+              )
+            """)
+    int bindMetricDefinition(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("analysisTaskId") String analysisTaskId,
+            @Param("metricDefinitionVersionId") String metricDefinitionVersionId);
+
     /** 记录由一个 Agent Run 触发的 Analysis Task 切换关系。 */
     @Insert("""
             insert into analysis_task_event (
@@ -111,11 +134,13 @@ public interface AnalysisTaskMapper {
             @Result(column = "analysis_task_id", property = "analysisTaskId"),
             @Result(column = "conversation_id", property = "conversationId"),
             @Result(column = "source_agent_run_id", property = "sourceAgentRunId"),
+            @Result(column = "metric_definition_version_id", property = "metricDefinitionVersionId"),
             @Result(column = "created_at", property = "createdAt")
     })
     @Select("""
             select task.analysis_task_id, task.conversation_id, task.goal,
-                   task.status, task.source_agent_run_id, task.created_at
+                   task.status, task.source_agent_run_id, task.metric_definition_version_id,
+                   task.created_at
             from analysis_task task
             join workspace_membership membership on membership.workspace_id = task.workspace_id
             where task.conversation_id = #{conversationId}
