@@ -456,7 +456,7 @@ components:
           format: int64
         eventType:
           type: string
-          enum: [agent.run.accepted, agent.run.progress, agent.run.completed, agent.run.failed, agent.run.cancelled]
+          enum: [agent.run.accepted, agent.run.progress, agent.run.clarification, agent.run.plan, agent.run.completed, agent.run.failed, agent.run.cancelled]
         occurredAt:
           type: string
           format: date-time

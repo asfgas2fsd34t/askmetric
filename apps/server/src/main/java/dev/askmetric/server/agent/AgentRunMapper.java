@@ -58,7 +58,7 @@ public interface AgentRunMapper {
             """)
     boolean isTerminal(@Param("runId") String runId);
 
-    /** 读取当前用户 Workspace 内、已关联 Analysis Task 的分析型 Agent Run。 */
+    /** 读取当前用户 Workspace 内、已关联 Analysis Task 且口径已确认的分析型 Agent Run；未确认口径的任务不能执行受治理查询。 */
     @ResultMap("persistedAgentRun")
     @Select("""
             select run.run_id, run.conversation_id, run.input_message_id,
@@ -73,13 +73,14 @@ public interface AgentRunMapper {
                 where event.run_id = run.run_id
                 order by event.sequence desc
                 limit 1
-            ) latest on latest.event_type in ('ACCEPTED', 'PROGRESS')
+            ) latest on latest.event_type in ('ACCEPTED', 'PROGRESS', 'PLAN')
             where run.run_id = #{runId}
               and run.workspace_id = #{workspaceId}
               and run.intent_route = 'ANALYSIS'
               and task.workspace_id = run.workspace_id
               and task.conversation_id = run.conversation_id
               and task.status in ('ACTIVE', 'WAITING_FOR_INPUT')
+              and task.metric_definition_version_id is not null
               and membership.user_subject = #{userSubject}
             """)
     Optional<PersistedAgentRun> findAnalysisRun(
@@ -208,8 +209,10 @@ public interface AgentRunMapper {
             join latest on true
             where #{sequence} = latest.sequence + 1
               and (
-                  (latest.event_type = 'ACCEPTED' and #{eventType} in ('PROGRESS', 'FAILED'))
-                  or (latest.event_type = 'PROGRESS' and #{eventType} in ('PROGRESS', 'COMPLETED', 'FAILED'))
+                  (latest.event_type = 'ACCEPTED'
+                      and #{eventType} in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'FAILED'))
+                  or (latest.event_type in ('PROGRESS', 'CLARIFICATION', 'PLAN')
+                      and #{eventType} in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'COMPLETED', 'FAILED'))
               )
             on conflict do nothing
             """)
@@ -246,7 +249,7 @@ public interface AgentRunMapper {
                   and run.conversation_id = #{conversationId}
                   and run.workspace_id = #{workspaceId}
                   and membership.user_subject = #{userSubject}
-                  and latest.event_type in ('ACCEPTED', 'PROGRESS')
+                  and latest.event_type in ('ACCEPTED', 'PROGRESS', 'PLAN')
                   and task.status in ('ACTIVE', 'WAITING_FOR_INPUT', 'WAITING_FOR_APPROVAL')
                 for update of run, task
             ), cancelled_event as (
@@ -279,6 +282,14 @@ public interface AgentRunMapper {
             @Param("runId") String runId,
             @Param("eventId") String eventId,
             @Param("reason") String reason);
+
+    /** 读取 Agent Run 当前已持久化的最大事件序号；为 0 表示尚无事件。 */
+    @Select("""
+            select coalesce(max(sequence), 0)
+            from agent_run_event
+            where run_id = #{runId}
+            """)
+    long latestSequence(@Param("runId") String runId);
 
     /** 读取 Agent Run 的完整事件，用于 SSE 连接建立或应用重启后的恢复。 */
     @Results(id = "agentRunEvent", value = {

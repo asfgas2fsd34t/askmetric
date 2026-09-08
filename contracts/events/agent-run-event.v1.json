@@ -18,7 +18,7 @@
   "properties": {
     "eventId": { "type": "string", "minLength": 1 },
     "schemaVersion": { "const": 1 },
-    "eventType": { "enum": ["agent.run.accepted", "agent.run.progress", "agent.run.completed", "agent.run.failed", "agent.run.cancelled"] },
+    "eventType": { "enum": ["agent.run.accepted", "agent.run.progress", "agent.run.clarification", "agent.run.plan", "agent.run.completed", "agent.run.failed", "agent.run.cancelled"] },
     "sequence": { "type": "integer", "minimum": 1 },
     "occurredAt": { "type": "string", "format": "date-time" },
     "conversationId": { "type": "string", "minLength": 1 },

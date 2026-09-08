@@ -1,6 +1,7 @@
 package dev.askmetric.server.agent;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import lombok.Data;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
  */
 @Data
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AgentRunRequest {
     private String eventId;
     private int schemaVersion;
@@ -20,6 +22,8 @@ public class AgentRunRequest {
     private String conversationId;
     private String runId;
     private String message;
+    private String taskGoal;
+    private Long lastEventSequence;
 
     @JsonCreator
     public AgentRunRequest(
@@ -31,6 +35,21 @@ public class AgentRunRequest {
             @JsonProperty("conversationId") String conversationId,
             @JsonProperty("runId") String runId,
             @JsonProperty("message") String message) {
+        this(eventId, schemaVersion, eventType, sequence, occurredAt,
+                conversationId, runId, message, null, null);
+    }
+
+    public AgentRunRequest(
+            String eventId,
+            int schemaVersion,
+            AgentRunEventType eventType,
+            long sequence,
+            Instant occurredAt,
+            String conversationId,
+            String runId,
+            String message,
+            String taskGoal,
+            Long lastEventSequence) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
@@ -50,6 +69,12 @@ public class AgentRunRequest {
         if (message.length() > 4000) {
             throw new IllegalArgumentException("message must be at most 4000 characters");
         }
+        if (taskGoal != null && (taskGoal.isBlank() || taskGoal.length() > 4000)) {
+            throw new IllegalArgumentException("taskGoal must be 1-4000 characters");
+        }
+        if (lastEventSequence != null && lastEventSequence < 0) {
+            throw new IllegalArgumentException("lastEventSequence must not be negative");
+        }
         this.eventId = eventId;
         this.schemaVersion = schemaVersion;
         this.eventType = eventType;
@@ -58,6 +83,8 @@ public class AgentRunRequest {
         this.conversationId = conversationId;
         this.runId = runId;
         this.message = message;
+        this.taskGoal = taskGoal;
+        this.lastEventSequence = lastEventSequence;
     }
 
     private static void requireText(String value, String field) {

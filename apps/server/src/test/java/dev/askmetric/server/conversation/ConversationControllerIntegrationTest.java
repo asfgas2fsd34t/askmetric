@@ -14,6 +14,7 @@ import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
 import dev.askmetric.server.agent.AgentRunService;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -275,8 +276,11 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.agentRun.intentRoute").value("analysis"))
                 .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.95))
                 .andExpect(jsonPath("$.analysisTask.goal").value("为什么本月 MRR 下降？"))
-                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andExpect(jsonPath("$.analysisTask.status").value("waiting_for_input"))
                 .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").doesNotExist())
+                .andExpect(jsonPath("$.agentRun.auditEvents.length()").value(4))
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.clarification"))
+                .andExpect(jsonPath("$.agentRun.auditEvents[3].eventType").value("agent.run.completed"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -308,7 +312,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.agentRun.intentConfidence").value(0.95))
                 .andExpect(jsonPath("$.analysisTask").doesNotExist())
                 .andExpect(jsonPath("$.assistantMessage.content").value(
-                        "当前对话已有活动分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
+                        "当前对话已有分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
@@ -335,7 +339,11 @@ class ConversationControllerIntegrationTest {
                         org.hamcrest.Matchers.containsString("使用自定义口径")))
                 .andExpect(jsonPath("$.agentRun.metricDefinitionVersionId").doesNotExist())
                 .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").doesNotExist())
-                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.completed"));
+                .andExpect(jsonPath("$.agentRun.auditEvents.length()").value(4))
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].eventType").value("agent.run.clarification"))
+                .andExpect(jsonPath("$.agentRun.auditEvents[2].message",
+                        org.hamcrest.Matchers.containsString("等待业务用户确认口径")))
+                .andExpect(jsonPath("$.agentRun.auditEvents[3].eventType").value("agent.run.completed"));
     }
 
     @Test
@@ -512,7 +520,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.agentRun.intentConfidence").value(1.0))
                 .andExpect(jsonPath("$.analysisTask").doesNotExist())
                 .andExpect(jsonPath("$.assistantMessage.content").value(
-                        "当前对话没有活动分析任务。请先描述要调查的分析目标。"));
+                        "当前对话没有可继续的分析任务。请先描述要调查的分析目标。"));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
@@ -534,7 +542,7 @@ class ConversationControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.analysisTask").doesNotExist())
                 .andExpect(jsonPath("$.assistantMessage.content").value(
-                        "当前对话已有活动分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
+                        "当前对话已有分析任务。请说明要继续当前目标，还是切换到新的分析目标。"));
 
         mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
                         .header("X-Workspace-Id", "workspace-demo")
@@ -607,6 +615,191 @@ class ConversationControllerIntegrationTest {
                 .andExpect(jsonPath("$.agentRuns[1].auditEvents[2].eventType").value("agent.run.cancelled"));
     }
 
+    @Test
+    void holdsAnUnconfirmedMrrTaskInWaitingForInputWithoutGovernedQueries() throws Exception {
+        String conversationId = createConversation("MRR 口径澄清");
+        String accepted = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"为什么本月 MRR 下降？\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.analysisTask.status").value("waiting_for_input"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = objectMapper.readTree(accepted).at("/agentRun/runId").asText();
+        String analysisTaskId = objectMapper.readTree(accepted).at("/analysisTask/analysisTaskId").asText();
+
+        mvc.perform(post("/api/v1/queries")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runId\":\"%s\",\"sql\":\"select month_start from demo_warehouse.monthly_mrr\"}"
+                                .formatted(runId))
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("查询必须关联当前工作区内的分析型 Agent Run"));
+
+        Integer enqueued = jdbcTemplate.queryForObject(
+                "select count(*) from agent_run_outbox where run_id = ?", Integer.class, runId);
+        assertThat(enqueued).isZero();
+        Integer snapshots = jdbcTemplate.queryForObject(
+                "select count(*) from evidence_snapshot where analysis_task_id = ?", Integer.class, analysisTaskId);
+        assertThat(snapshots).isZero();
+    }
+
+    @Test
+    void entersThePlanningStageWithDrilldownStepsAfterTheMetricDefinitionIsConfirmed() throws Exception {
+        String conversationId = createConversation("MRR 分析计划");
+        unconfirmedAnalysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+        String confirmed = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用标准 MRR v3 口径\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andExpect(jsonPath("$.analysisTask.metricDefinitionVersionId").value("metric_definition_mrr_v3"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = objectMapper.readTree(confirmed).at("/agentRun/runId").asText();
+
+        String outboxPayload = jdbcTemplate.queryForObject(
+                "select payload from agent_run_outbox where run_id = ?", String.class, runId);
+        assertThat(objectMapper.readTree(outboxPayload).get("lastEventSequence").asLong()).isEqualTo(2L);
+        assertThat(objectMapper.readTree(outboxPayload).get("taskGoal").asText())
+                .isEqualTo("为什么本月 MRR 下降？");
+
+        agentRunService.acceptEvent(new AgentRunEvent(
+                "plan-" + runId,
+                1,
+                AgentRunEventType.PLAN,
+                3,
+                Instant.now(),
+                conversationId,
+                runId,
+                "阶段 planning：分析计划：1. 按月汇总已确认口径的 MRR 基线；2. 对比 5 月与 6 月 MRR 变化；"
+                        + "3. 按套餐分组下钻降幅来源；4. 按客户分层定位主要贡献客户；5. 验证证据并产出已验证发现",
+                AgentRunEventSource.PYTHON));
+        agentRunService.acceptEvent(new AgentRunEvent(
+                "planned-completed-" + runId,
+                1,
+                AgentRunEventType.COMPLETED,
+                4,
+                Instant.now(),
+                conversationId,
+                runId,
+                "分析计划已展示，等待业务用户确认后开始下钻检索",
+                AgentRunEventSource.PYTHON));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("active"))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents.length()").value(4))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[2].eventType").value("agent.run.plan"))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[2].message",
+                        org.hamcrest.Matchers.containsString("按套餐分组下钻降幅来源")))
+                .andExpect(jsonPath("$.agentRuns[1].auditEvents[3].eventType").value("agent.run.completed"));
+
+        List<Map<String, Object>> replayedEvents = jdbcTemplate.queryForList("""
+                select sequence, event_type from agent_run_event
+                where run_id = ? and sequence > 2
+                order by sequence
+                """, runId);
+        assertThat(replayedEvents)
+                .extracting(event -> event.get("event_type"))
+                .containsExactly("PLAN", "COMPLETED");
+    }
+
+    @Test
+    void createsANewTaskWhenOnlyParkedTasksRemain() throws Exception {
+        String conversationId = createConversation("搁置任务调查");
+        unconfirmedAnalysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+
+        String switched = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"切换到调查客户流失率趋势\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String parkedRunId = objectMapper.readTree(switched).at("/agentRun/runId").asText();
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/runs/{runId}/cancel", conversationId, parkedRunId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"目标已完成\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"分析一下客户流失原因\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assistantMessage").doesNotExist())
+                .andExpect(jsonPath("$.analysisTask.goal").value("分析一下客户流失原因"))
+                .andExpect(jsonPath("$.analysisTask.status").value("active"));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks.length()").value(3))
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("waiting_for_input"))
+                .andExpect(jsonPath("$.analysisTasks[1].status").value("cancelled"))
+                .andExpect(jsonPath("$.analysisTasks[2].status").value("active"));
+    }
+
+    @Test
+    void cancelsARunWhileItIsPresentingItsPlan() throws Exception {
+        String conversationId = createConversation("计划阶段取消");
+        unconfirmedAnalysisTaskIdFor(conversationId, "为什么本月 MRR 下降？");
+        String confirmed = mvc.perform(post("/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"使用标准 MRR v3 口径\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = objectMapper.readTree(confirmed).at("/agentRun/runId").asText();
+        agentRunService.acceptEvent(new AgentRunEvent(
+                "plan-" + runId,
+                1,
+                AgentRunEventType.PLAN,
+                3,
+                Instant.now(),
+                conversationId,
+                runId,
+                "阶段 planning：分析计划：1. 按月汇总已确认口径的 MRR 基线；2. 对比 5 月与 6 月 MRR 变化",
+                AgentRunEventSource.PYTHON));
+
+        mvc.perform(post("/api/v1/conversations/{conversationId}/runs/{runId}/cancel", conversationId, runId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"计划方向不对\"}")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventType").value("agent.run.cancelled"))
+                .andExpect(jsonPath("$.sequence").value(4))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("计划方向不对")));
+
+        mvc.perform(get("/api/v1/conversations/{conversationId}", conversationId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisTasks[0].status").value("cancelled"));
+    }
+
     private String createConversation(String title) throws Exception {
         String response = mvc.perform(post("/api/v1/conversations")
                         .header("X-Workspace-Id", "workspace-demo")
@@ -639,7 +832,7 @@ class ConversationControllerIntegrationTest {
                         .content("{\"content\":\"%s\"}".formatted(content))
                         .with(jwt().jwt(token -> token.subject(ALICE))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.analysisTask.status").value("active"))
+                .andExpect(jsonPath("$.analysisTask.status").value("waiting_for_input"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
