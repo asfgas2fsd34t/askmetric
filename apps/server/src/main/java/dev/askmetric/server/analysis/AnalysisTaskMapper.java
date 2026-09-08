@@ -14,6 +14,7 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface AnalysisTaskMapper {
+    /** 读取当前用户 Workspace 内最新一个可继续的分析任务：活动任务优先，其次取等待口径确认的任务；被切换搁置的任务只能通过显式任务控制恢复。 */
     @ResultMap("analysisTask")
     @Select("""
             select task.analysis_task_id, task.conversation_id, task.goal,
@@ -24,11 +25,22 @@ public interface AnalysisTaskMapper {
             where task.conversation_id = #{conversationId}
               and task.workspace_id = #{workspaceId}
               and membership.user_subject = #{userSubject}
-              and task.status = 'ACTIVE'
-            order by task.created_at, task.analysis_task_id
+              and (
+                  task.status = 'ACTIVE'
+                  or (
+                      task.status = 'WAITING_FOR_INPUT'
+                      and not exists (
+                          select 1
+                          from analysis_task_event switched
+                          where switched.analysis_task_id = task.analysis_task_id
+                            and switched.event_type = 'SWITCHED'
+                      )
+                  )
+              )
+            order by (task.status = 'ACTIVE') desc, task.created_at desc, task.analysis_task_id desc
             limit 1
             """)
-    Optional<AnalysisTask> findActive(
+    Optional<AnalysisTask> findContinuable(
             @Param("userSubject") String userSubject,
             @Param("workspaceId") String workspaceId,
             @Param("conversationId") String conversationId);
@@ -55,14 +67,14 @@ public interface AnalysisTaskMapper {
             @Param("status") AnalysisTaskStatus status,
             @Param("sourceAgentRunId") String sourceAgentRunId);
 
-    /** 将当前活动任务置为等待输入，以便同一 Conversation 可以开始新的分析目标。 */
+    /** 将任务置为等待输入（口径澄清或被新目标切换），已处于该状态时幂等。 */
     @Update("""
             update analysis_task task
-            set status = #{status}
+            set status = 'WAITING_FOR_INPUT'
             where task.analysis_task_id = #{analysisTaskId}
               and task.conversation_id = #{conversationId}
               and task.workspace_id = #{workspaceId}
-              and task.status = 'ACTIVE'
+              and task.status in ('ACTIVE', 'WAITING_FOR_INPUT')
               and exists (
                   select 1
                   from workspace_membership membership
@@ -70,12 +82,32 @@ public interface AnalysisTaskMapper {
                     and membership.user_subject = #{userSubject}
               )
             """)
-    int changeStatus(
+    int waitForInput(
             @Param("userSubject") String userSubject,
             @Param("workspaceId") String workspaceId,
             @Param("conversationId") String conversationId,
-            @Param("analysisTaskId") String analysisTaskId,
-            @Param("status") AnalysisTaskStatus status);
+            @Param("analysisTaskId") String analysisTaskId);
+
+    /** 将等待输入的任务恢复为活动（例如业务用户确认口径后），已活动时幂等。 */
+    @Update("""
+            update analysis_task task
+            set status = 'ACTIVE'
+            where task.analysis_task_id = #{analysisTaskId}
+              and task.conversation_id = #{conversationId}
+              and task.workspace_id = #{workspaceId}
+              and task.status in ('ACTIVE', 'WAITING_FOR_INPUT')
+              and exists (
+                  select 1
+                  from workspace_membership membership
+                  where membership.workspace_id = task.workspace_id
+                    and membership.user_subject = #{userSubject}
+              )
+            """)
+    int resume(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("conversationId") String conversationId,
+            @Param("analysisTaskId") String analysisTaskId);
 
     /** 为 Analysis Task 绑定同一 Workspace 中的不可变指标版本；用户调整口径时更新版本引用。 */
     @Update("""

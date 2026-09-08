@@ -35,6 +35,7 @@ class AgentRunEventType(str, Enum):
     CANCEL_REQUESTED = "agent.run.cancel.requested"  # Java 请求 Python 停止 Agent Run。
     ACCEPTED = "agent.run.accepted"  # 运行已进入队列。
     PROGRESS = "agent.run.progress"  # Python 正在处理运行。
+    PLAN = "agent.run.plan"  # Python 已生成分析计划并展示下钻步骤。
     COMPLETED = "agent.run.completed"  # 运行已产生最终结果。
     FAILED = "agent.run.failed"  # 运行以失败终止。
 
@@ -116,6 +117,52 @@ def validate_request(request: dict) -> None:
             raise ValueError(f"Agent Run 请求字段无效: {field}")
 
 
+def first_event_sequence(request: dict) -> int:
+    """Java 在请求中携带 lastEventSequence；Python 从其下一个序号开始连续发号。"""
+    return int(request.get("lastEventSequence", 1)) + 1
+
+
+# MRR 参考场景的固定下钻步骤；口径已由 Java 确认后才进入该计划。
+MRR_PLAN_STEPS = (
+    "按月汇总已确认口径的 MRR 基线",
+    "对比 5 月与 6 月 MRR 变化",
+    "按套餐分组下钻降幅来源",
+    "按客户分层定位主要贡献客户",
+    "验证证据并产出已验证发现",
+)
+
+GENERIC_PLAN_STEPS = (
+    "理解分析目标与口径",
+    "检索相关指标定义与知识来源",
+    "执行受治理查询获取证据",
+    "验证证据与假设",
+    "汇总结论与不确定性",
+)
+
+
+def is_mrr_run(request: dict) -> bool:
+    # 确认口径的消息不一定包含 MRR 字样，因此同时参考任务目标。
+    text = f"{request.get('message', '')} {request.get('taskGoal', '')}"
+    return "mrr" in text.lower() or "月度经常性收入" in text
+
+
+def build_plan_steps(request: dict) -> tuple[str, ...]:
+    return MRR_PLAN_STEPS if is_mrr_run(request) else GENERIC_PLAN_STEPS
+
+
+def plan_message(request: dict) -> str:
+    steps = "；".join(
+        f"{index}. {step}" for index, step in enumerate(build_plan_steps(request), start=1)
+    )
+    return f"阶段 planning：分析计划：{steps}"
+
+
+def completed_message(request: dict) -> str:
+    if is_mrr_run(request):
+        return "分析计划已展示，等待业务用户确认后开始下钻检索"
+    return "分析计划已展示，等待继续推进分析任务"
+
+
 class AgentListener(MessageListener):
     def __init__(self, producer: Producer):
         self.producer = producer
@@ -145,45 +192,53 @@ class AgentListener(MessageListener):
                 return ConsumeResult.FAILURE
 
     def _emit_run(self, request: dict) -> None:
+        # RocketMQ 至少一次投递；此状态机保证同一请求在本进程内最多发出一组计划和终态。
+        base_sequence = first_event_sequence(request)
         with self._state_lock:
-            # RocketMQ 至少一次投递；此状态机保证同一请求在本进程内最多发出一组进度和终态。
             state = self._states.setdefault(
                 request["runId"],
-                {"progress": False, "completed": False, "failed": False, "cancelled": False},
+                {"plan": False, "completed": False, "failed": False, "cancelled": False},
             )
             if state["failed"] or state["completed"] or state["cancelled"]:
                 return
-            if not state["progress"]:
-                self.publish(event(request, AgentRunEventType.PROGRESS, 2, "Python Synthetic Agent 正在处理"))
-                state["progress"] = True
-        with self._state_lock:
+            if not state["plan"]:
+                self.publish(event(request, AgentRunEventType.PLAN, base_sequence, plan_message(request)))
+                state["plan"] = True
             if state["cancelled"]:
                 return
             if not state["completed"]:
-                self.publish(event(request, AgentRunEventType.COMPLETED, 3, "Synthetic Agent Run completed"))
+                self.publish(
+                    event(
+                        request,
+                        AgentRunEventType.COMPLETED,
+                        base_sequence + 1,
+                        completed_message(request),
+                    )
+                )
                 state["completed"] = True
 
     def _cancel_run(self, request: dict) -> None:
         with self._state_lock:
             state = self._states.setdefault(
                 request["runId"],
-                {"progress": False, "completed": False, "failed": False, "cancelled": False},
+                {"plan": False, "completed": False, "failed": False, "cancelled": False},
             )
             if not state["completed"] and not state["failed"]:
                 state["cancelled"] = True
 
     def _emit_failure(self, request: dict) -> None:
+        base_sequence = first_event_sequence(request)
         with self._state_lock:
             state = self._states.setdefault(
                 request["runId"],
-                {"progress": False, "completed": False, "failed": False, "cancelled": False},
+                {"plan": False, "completed": False, "failed": False, "cancelled": False},
             )
             if state["failed"] or state["completed"] or state["cancelled"]:
                 return
-            if not state["progress"]:
-                # 先确认序号 2 的进度事件，才能安全地产生序号 3 的失败终态。
-                raise RuntimeError("进度事件尚未确认投递，等待 RocketMQ 重投")
-            self.publish(event(request, AgentRunEventType.FAILED, 3, "Synthetic Agent Run failed"))
+            if not state["plan"]:
+                # 先确认计划事件的投递，才能安全地产生下一序号的失败终态。
+                raise RuntimeError("计划事件尚未确认投递，等待 RocketMQ 重投")
+            self.publish(event(request, AgentRunEventType.FAILED, base_sequence + 1, "Agent Run 处理失败"))
             state["failed"] = True
 
     def publish(self, payload: dict) -> None:

@@ -15,6 +15,10 @@ public enum AgentRunEventType {
     ACCEPTED("agent.run.accepted"),
     /** Python 正在处理运行。 */
     PROGRESS("agent.run.progress"),
+    /** Java 已向业务用户提出口径或目标澄清问题，运行暂停等待输入。 */
+    CLARIFICATION("agent.run.clarification"),
+    /** Python 已生成分析计划并展示下钻步骤。 */
+    PLAN("agent.run.plan"),
     /** Python 已产生运行结果。 */
     COMPLETED("agent.run.completed"),
     /** Java 或 Python 已确认运行失败。 */

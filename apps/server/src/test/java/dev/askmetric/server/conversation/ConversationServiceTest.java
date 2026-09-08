@@ -46,7 +46,7 @@ class ConversationServiceTest {
         ConversationMessage userMessage = message("message-1", "继续");
         PersistedAgentRun persistedRun = persistedRun("run-1", activeTask.getAnalysisTaskId());
 
-        when(analysisTaskMapper.findActive(USER, WORKSPACE, CONVERSATION)).thenReturn(Optional.of(activeTask));
+        when(analysisTaskMapper.findContinuable(USER, WORKSPACE, CONVERSATION)).thenReturn(Optional.of(activeTask));
         when(conversationMapper.appendMessage(
                 eq(USER), eq(WORKSPACE), eq(CONVERSATION), anyString(), eq("user"), eq(USER), eq("继续")))
                 .thenReturn(Optional.of(userMessage));
@@ -59,6 +59,7 @@ class ConversationServiceTest {
                 });
         when(agentRunMapper.linkAnalysisTask(eq(USER), eq(WORKSPACE), anyString(), eq("analysis-task-1")))
                 .thenReturn(1);
+        when(analysisTaskMapper.resume(USER, WORKSPACE, CONVERSATION, "analysis-task-1")).thenReturn(1);
         when(agentRunMapper.appendAuditEvent(
                 eq(USER), eq(WORKSPACE), anyString(), anyString(), anyLong(),
                 any(AgentRunEventType.class), anyString(), eq(AgentRunEventSource.JAVA)))

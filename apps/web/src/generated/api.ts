@@ -233,7 +233,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.completed" | "agent.run.failed" | "agent.run.cancelled";
+            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.clarification" | "agent.run.plan" | "agent.run.completed" | "agent.run.failed" | "agent.run.cancelled";
             /** Format: date-time */
             occurredAt: string;
             message: string;

@@ -22,6 +22,8 @@
     "occurredAt": { "type": "string", "format": "date-time" },
     "conversationId": { "type": "string", "minLength": 1 },
     "runId": { "type": "string", "minLength": 1 },
-    "message": { "type": "string", "minLength": 1, "maxLength": 4000 }
+    "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "taskGoal": { "type": "string", "minLength": 1, "maxLength": 4000, "description": "本次运行推进的 Analysis Task 目标；Python 用它而不是仅凭消息内容判断分析场景。仅 agent.run.requested 携带。" },
+    "lastEventSequence": { "type": "integer", "minimum": 0, "description": "入队时该 Agent Run 已持久化的最大事件序号；Python 从 lastEventSequence + 1 开始发号。仅 agent.run.requested 携带。" }
   }
 }

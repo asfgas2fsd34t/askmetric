@@ -128,7 +128,7 @@ public class ConversationService {
                         content)
                 .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
         Optional<AnalysisTask> activeTask = intent.getRoute() == AgentRunIntentRoute.ANALYSIS
-                ? analysisTaskMapper.findActive(userSubject, workspaceId, conversationId)
+                ? analysisTaskMapper.findContinuable(userSubject, workspaceId, conversationId)
                 : Optional.empty();
         String runId = "run_" + UUID.randomUUID();
         if (agentRunMapper.createRun(
@@ -158,7 +158,11 @@ public class ConversationService {
         }
         if (processed.getAgentRun().getAnalysisTaskId() != null
                 && !processed.getAgentRun().getAuditEvents().getLast().getEventType().isTerminal()) {
-            enqueueAnalysisRun(conversationId, content, processed.getAgentRun().getRunId());
+            enqueueAnalysisRun(
+                    conversationId,
+                    content,
+                    processed.getAnalysisTask().getGoal(),
+                    processed.getAgentRun().getRunId());
         }
         completeIdempotency(reservation, processed);
         return processed;
@@ -217,7 +221,7 @@ public class ConversationService {
         }
     }
 
-    private void enqueueAnalysisRun(String conversationId, String message, String runId) {
+    private void enqueueAnalysisRun(String conversationId, String message, String taskGoal, String runId) {
         AgentRunRequest request = new AgentRunRequest(
                 "agent_run_request_" + runId,
                 1,
@@ -226,7 +230,9 @@ public class ConversationService {
                 java.time.Instant.now(),
                 conversationId,
                 runId,
-                message);
+                message,
+                taskGoal,
+                agentRunMapper.latestSequence(runId));
         try {
             String payload = objectMapper.writeValueAsString(request);
             if (outboxMapper.enqueue(
@@ -314,7 +320,7 @@ public class ConversationService {
         }
         appendAuditEvent(userSubject, workspaceId, runId, 1, AgentRunEventType.ACCEPTED, "分析 Agent 运行已接受");
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS,
-                "检测到当前对话已有活动分析任务，等待用户澄清");
+                "检测到当前对话已有分析任务，等待用户澄清");
         ConversationMessage assistantMessage = mapper.appendMessage(
                         userSubject,
                         workspaceId,
@@ -322,7 +328,7 @@ public class ConversationService {
                         "message_" + UUID.randomUUID(),
                         "assistant",
                         null,
-                        "当前对话已有活动分析任务。请说明要继续当前目标，还是切换到新的分析目标。")
+                        "当前对话已有分析任务。请说明要继续当前目标，还是切换到新的分析目标。")
                 .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
         appendAuditEvent(userSubject, workspaceId, runId, 3, AgentRunEventType.COMPLETED, "已请求用户澄清分析目标");
         return new MessageProcessed(
@@ -347,8 +353,8 @@ public class ConversationService {
                         conversationId,
                         "message_" + UUID.randomUUID(),
                         "assistant",
-                        null,
-                        "当前对话没有活动分析任务。请先描述要调查的分析目标。")
+                null,
+                "当前对话没有可继续的分析任务。请先描述要调查的分析目标。")
                 .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
         appendAuditEvent(userSubject, workspaceId, runId, 3, AgentRunEventType.COMPLETED, "已请求用户说明分析目标");
         return new MessageProcessed(
@@ -392,6 +398,7 @@ public class ConversationService {
                         != 1) {
             throw new AccessDeniedException("Metric Definition not found in Workspace");
         }
+        resumeAnalysisTask(userSubject, workspaceId, conversationId, activeTask);
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS, "正在继续当前分析任务");
         return new MessageProcessed(
                 userMessage,
@@ -426,8 +433,11 @@ public class ConversationService {
                             null,
                             confirmationPrompt(standardDefinition))
                     .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
-            appendAuditEvent(userSubject, workspaceId, runId, 2,
-                    AgentRunEventType.COMPLETED, "尚未确认指标口径，继续等待业务用户输入");
+            holdTaskForCaliberConfirmation(
+                    userSubject, workspaceId, conversationId, runId, activeTask,
+                    2,
+                    "阶段 clarification：已展示指标定义，等待业务用户确认口径",
+                    "尚未确认指标口径，继续等待业务用户输入");
             return new MessageProcessed(
                     userMessage,
                     assistantMessage,
@@ -435,6 +445,7 @@ public class ConversationService {
                     activeTask);
         }
         bindMetricDefinition(userSubject, workspaceId, runId, activeTask, selected);
+        resumeAnalysisTask(userSubject, workspaceId, conversationId, activeTask);
         appendAuditEvent(userSubject, workspaceId, runId, 2, AgentRunEventType.PROGRESS,
                 "已采用指标定义 " + selected.getVersionLabel());
         return new MessageProcessed(
@@ -442,6 +453,36 @@ public class ConversationService {
                 null,
                 persistedRun(userSubject, workspaceId, conversationId, runId),
                 activeTask);
+    }
+
+    /** 口径未确认：记录 clarification 阶段事件并让任务等待输入，未确认前不执行受治理查询。 */
+    private void holdTaskForCaliberConfirmation(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            String runId,
+            AnalysisTask task,
+            long clarificationSequence,
+            String clarificationMessage,
+            String completedMessage) {
+        appendAuditEvent(userSubject, workspaceId, runId, clarificationSequence,
+                AgentRunEventType.CLARIFICATION, clarificationMessage);
+        appendAuditEvent(userSubject, workspaceId, runId, clarificationSequence + 1,
+                AgentRunEventType.COMPLETED, completedMessage);
+        if (analysisTaskMapper.waitForInput(
+                        userSubject, workspaceId, conversationId, task.getAnalysisTaskId())
+                != 1) {
+            throw new AccessDeniedException("Analysis Task not found in Workspace");
+        }
+        task.setStatus(AnalysisTaskStatus.WAITING_FOR_INPUT);
+    }
+
+    private void resumeAnalysisTask(
+            String userSubject, String workspaceId, String conversationId, AnalysisTask task) {
+        if (analysisTaskMapper.resume(userSubject, workspaceId, conversationId, task.getAnalysisTaskId()) != 1) {
+            throw new AccessDeniedException("Analysis Task not found in Workspace");
+        }
+        task.setStatus(AnalysisTaskStatus.ACTIVE);
     }
 
     private void bindMetricDefinition(
@@ -486,12 +527,11 @@ public class ConversationService {
             ConversationMessage userMessage,
             String runId,
             AnalysisTask activeTask) {
-        if (analysisTaskMapper.changeStatus(
+        if (analysisTaskMapper.waitForInput(
                         userSubject,
                         workspaceId,
                         conversationId,
-                        activeTask.getAnalysisTaskId(),
-                        AnalysisTaskStatus.WAITING_FOR_INPUT)
+                        activeTask.getAnalysisTaskId())
                 != 1) {
             throw new AccessDeniedException("Active Analysis Task not found in Workspace");
         }
@@ -558,10 +598,13 @@ public class ConversationService {
                             null,
                             confirmationPrompt(standardDefinition.orElseThrow()))
                     .orElseThrow(() -> new AccessDeniedException("Conversation not found in Workspace"));
-            appendAuditEvent(userSubject, workspaceId, runId, nextSequence,
-                    AgentRunEventType.COMPLETED, "已展示标准指标定义，等待业务用户确认口径");
             AnalysisTask analysisTask = persistedAnalysisTask(
                     userSubject, workspaceId, conversationId, analysisTaskId);
+            holdTaskForCaliberConfirmation(
+                    userSubject, workspaceId, conversationId, runId, analysisTask,
+                    nextSequence,
+                    "阶段 clarification：已展示标准指标定义，等待业务用户确认口径",
+                    "口径未确认，任务进入 waiting_for_input，暂不执行受治理查询");
             return new MessageProcessed(
                     userMessage,
                     assistantMessage,
