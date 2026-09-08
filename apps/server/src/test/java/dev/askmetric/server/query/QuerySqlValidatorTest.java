@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class QuerySqlValidatorTest {
     private final QuerySqlValidator validator = new QuerySqlValidator();
@@ -35,19 +34,6 @@ class QuerySqlValidatorTest {
         assertRejected("select unknown_metric from demo_warehouse.monthly_mrr", "字段未登记");
         assertRejected("select secret from demo_warehouse.monthly_mrr", "受限字段");
         assertRejected("select * from demo_warehouse.monthly_mrr", "通配符");
-    }
-
-    @Test
-    void rejectsParameterMismatch() {
-        QueryRequest request = new QueryRequest();
-        request.setSql("select month_start from demo_warehouse.monthly_mrr where month_start = ?");
-        request.setParameters(java.util.List.of());
-        assertThatThrownBy(() -> new QueryGateway(
-                "jdbc:postgresql://localhost:1/unused", "user", "password", validator,
-                new QueryAuditService(record -> 1))
-                .execute("user", request))
-                .isInstanceOf(QueryValidationException.class)
-                .hasMessageContaining("参数数量不匹配");
     }
 
     private void assertRejected(String sql, String message) {

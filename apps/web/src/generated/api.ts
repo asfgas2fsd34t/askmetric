@@ -165,6 +165,7 @@ export interface components {
             messages: components["schemas"]["ConversationMessage"][];
             agentRuns: components["schemas"]["AgentRun"][];
             analysisTasks: components["schemas"]["AnalysisTask"][];
+            evidenceSnapshots: components["schemas"]["EvidenceSnapshot"][];
         };
         ConversationMessage: {
             messageId: string;
@@ -208,6 +209,24 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        EvidenceSnapshot: {
+            evidenceSnapshotId: string;
+            conversationId: string;
+            analysisTaskId: string;
+            runId: string;
+            queryId: string;
+            sourceTable: string;
+            sourceRange: string;
+            columns: string[];
+            rows: {
+                [key: string]: unknown;
+            }[];
+            rowCount: number;
+            /** Format: int64 */
+            durationMs: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
         AgentRunAuditEvent: {
             eventId: string;
             runId: string;
@@ -245,6 +264,7 @@ export interface components {
         };
         QueryResult: {
             queryId: string;
+            evidenceSnapshotId?: string | null;
             /** @enum {string} */
             status: "SUCCEEDED" | "REJECTED" | "FAILED";
             columns: string[];
@@ -255,6 +275,8 @@ export interface components {
             /** Format: int64 */
             durationMs: number;
             reason?: string | null;
+            sourceTable?: string | null;
+            sourceRange?: string | null;
         };
     };
     responses: never;

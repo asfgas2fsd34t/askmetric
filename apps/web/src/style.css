@@ -183,7 +183,7 @@ textarea {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
   min-height: 0;
 }
 
@@ -191,6 +191,15 @@ textarea {
   min-width: 0;
   padding: 18px 16px;
   background: #eef1ee;
+}
+
+.evidence-panel {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 16px;
+  overflow-y: auto;
+  background: #f8faf8;
+  border-left: 1px solid #d8ddd9;
 }
 
 .conversation-rail {
@@ -453,6 +462,107 @@ textarea {
   border-top: 1px solid #eadada;
 }
 
+.evidence-empty {
+  margin-top: 28px;
+  color: #7b847e;
+  font-size: 13px;
+  text-align: center;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.evidence-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dfe4e0;
+  border-radius: 6px;
+}
+
+.evidence-card header {
+  display: grid;
+  gap: 3px;
+}
+
+.evidence-card header strong,
+.evidence-card header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-card header strong {
+  color: #243129;
+  font-size: 12px;
+}
+
+.evidence-card header small,
+.evidence-card > p,
+.evidence-preview > small {
+  color: #6f7a73;
+  font-size: 11px;
+}
+
+.evidence-card > p {
+  margin: 0;
+}
+
+.evidence-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.evidence-columns span {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 6px;
+  color: #334138;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #edf2ee;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.evidence-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.evidence-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: #f6f8f6;
+  border-radius: 4px;
+}
+
+.evidence-row > span {
+  display: grid;
+  min-width: 0;
+}
+
+.evidence-row small {
+  overflow: hidden;
+  color: #79837c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.evidence-row strong {
+  overflow-wrap: anywhere;
+  color: #27302a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .message-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px;
@@ -510,9 +620,8 @@ textarea {
 
 @media (max-width: 900px) {
   .workspace-grid {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: 210px minmax(0, 1fr) 260px;
   }
-
 }
 
 @media (max-width: 640px) {
@@ -537,6 +646,12 @@ textarea {
   .conversation-rail {
     border: 0;
     border-bottom: 1px solid #d8ddd9;
+  }
+
+  .evidence-panel {
+    overflow: visible;
+    border-top: 1px solid #d8ddd9;
+    border-left: 0;
   }
 
   .conversation-canvas {

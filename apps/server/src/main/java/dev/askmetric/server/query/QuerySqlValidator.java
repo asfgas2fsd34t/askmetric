@@ -1,6 +1,7 @@
 package dev.askmetric.server.query;
 
 import java.util.Locale;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,6 +79,28 @@ public class QuerySqlValidator {
         }
         validateSelectedColumns(lower);
         return (int) PARAMETER.matcher(normalized).results().count();
+    }
+
+    /** 返回 SQL 实际引用的语义目录来源表，多个表保持出现顺序。 */
+    public String sourceTables(String sql) {
+        String lower = sql.strip().toLowerCase(Locale.ROOT);
+        Set<String> cteNames = new java.util.HashSet<>();
+        Matcher ctes = CTE_NAME.matcher(lower);
+        while (ctes.find()) {
+            cteNames.add(ctes.group(1));
+        }
+        LinkedHashSet<String> sourceTables = new LinkedHashSet<>();
+        Matcher tables = TABLE_REFERENCE.matcher(lower);
+        while (tables.find()) {
+            String table = tables.group(1);
+            if (!cteNames.contains(table)) {
+                sourceTables.add(table);
+            }
+        }
+        if (sourceTables.isEmpty()) {
+            throw new QueryValidationException("查询必须访问语义目录登记的数据表");
+        }
+        return String.join(",", sourceTables);
     }
 
     private static void validateSelectedColumns(String sql) {

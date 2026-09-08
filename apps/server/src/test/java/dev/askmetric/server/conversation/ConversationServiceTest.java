@@ -21,6 +21,7 @@ import dev.askmetric.server.agent.PersistedAgentRun;
 import dev.askmetric.server.analysis.AnalysisTask;
 import dev.askmetric.server.analysis.AnalysisTaskMapper;
 import dev.askmetric.server.catalog.MetricDefinitionService;
+import dev.askmetric.server.evidence.EvidenceSnapshotService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -40,6 +41,7 @@ class ConversationServiceTest {
         MessageIdempotencyMapper idempotencyMapper = mock(MessageIdempotencyMapper.class);
         AgentRunOutboxMapper outboxMapper = mock(AgentRunOutboxMapper.class);
         MetricDefinitionService metricDefinitionService = mock(MetricDefinitionService.class);
+        EvidenceSnapshotService evidenceSnapshotService = mock(EvidenceSnapshotService.class);
         AnalysisTask activeTask = analysisTask("analysis-task-1");
         ConversationMessage userMessage = message("message-1", "继续");
         PersistedAgentRun persistedRun = persistedRun("run-1", activeTask.getAnalysisTaskId());
@@ -76,6 +78,7 @@ class ConversationServiceTest {
                 new DeterministicIntentRouter(),
                 new DeterministicChatReply(),
                 metricDefinitionService,
+                evidenceSnapshotService,
                 new ObjectMapper().findAndRegisterModules(),
                 "askmetric-agent-run-request");
 

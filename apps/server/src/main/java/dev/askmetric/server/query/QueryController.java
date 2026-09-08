@@ -3,6 +3,7 @@ package dev.askmetric.server.query;
 import dev.askmetric.server.workspace.WorkspaceAuthorizationService;
 import dev.askmetric.server.workspace.WorkspacePermission;
 import java.util.Optional;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -37,5 +38,15 @@ public class QueryController {
                 .currentWorkspaceId();
         request.setWorkspaceId(workspaceId);
         return ResponseEntity.ok(gateway.execute(identity.getSubject(), request));
+    }
+
+    /** 将查询治理拒绝转换为稳定 JSON 错误响应，避免调用方收到原始异常栈。 */
+    @ExceptionHandler(QueryValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(QueryValidationException exception) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
+    }
+
+    /** 查询边界返回给调用方的错误说明。 */
+    public record ErrorResponse(String error) {
     }
 }
