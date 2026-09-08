@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute a governed read-only query through the Java Query Gateway */
+        post: operations["executeGovernedQuery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -218,6 +235,27 @@ export interface components {
         CancelAgentRunRequest: {
             reason?: string;
         };
+        QueryRequest: {
+            /** @description Overwritten by Java from the authenticated Workspace context. */
+            workspaceId?: string;
+            analysisTaskId?: string | null;
+            runId?: string | null;
+            sql: string;
+            parameters?: unknown[];
+        };
+        QueryResult: {
+            queryId: string;
+            /** @enum {string} */
+            status: "SUCCEEDED" | "REJECTED" | "FAILED";
+            columns: string[];
+            rows: {
+                [key: string]: unknown;
+            }[];
+            rowCount: number;
+            /** Format: int64 */
+            durationMs: number;
+            reason?: string | null;
+        };
     };
     responses: never;
     parameters: {
@@ -264,6 +302,53 @@ export interface operations {
             };
             /** @description The requested Workspace is not available to the current user */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    executeGovernedQuery: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Query result constrained by the semantic catalog and row budget */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResult"];
+                };
+            };
+            /** @description Query violates the read-only or semantic catalog policy */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Workspace is not available to the current user */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Query execution failed */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
