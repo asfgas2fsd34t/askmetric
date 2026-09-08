@@ -4,11 +4,15 @@ import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import dev.askmetric.server.agent.PersistedAgentRun;
+import dev.askmetric.server.evidence.EvidenceSnapshotRecord;
+import dev.askmetric.server.evidence.EvidenceSnapshotService;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Java 唯一拥有的受治理只读查询入口。 */
 @Service
@@ -19,20 +23,24 @@ public class QueryGateway {
     private final JdbcTemplate jdbcTemplate;
     private final QuerySqlValidator validator;
     private final QueryAuditService auditService;
+    private final EvidenceSnapshotService evidenceSnapshotService;
 
     public QueryGateway(
             @Value("${askmetric.query.datasource.url:jdbc:postgresql://localhost:5433/askmetric_demo_warehouse}") String url,
             @Value("${askmetric.query.datasource.username:askmetric_demo}") String username,
             @Value("${askmetric.query.datasource.password:askmetric_demo}") String password,
             QuerySqlValidator validator,
-            QueryAuditService auditService) {
+            QueryAuditService auditService,
+            EvidenceSnapshotService evidenceSnapshotService) {
         DataSource dataSource = new DriverManagerDataSource(url, username, password);
         this.jdbcTemplate = new JdbcTemplate(dataSource);
         this.validator = validator;
         this.auditService = auditService;
+        this.evidenceSnapshotService = evidenceSnapshotService;
     }
 
-    /** 校验、执行并审计一次只读查询。 */
+    /** 校验、执行并审计一次只读查询；成功结果会生成不可变 Evidence Snapshot。 */
+    @Transactional(readOnly = true)
     public QueryResult execute(String userSubject, QueryRequest request) {
         String queryId = "query_" + UUID.randomUUID();
         long startedAt = System.nanoTime();
@@ -43,6 +51,9 @@ public class QueryGateway {
             if (parameters.size() != parameterCount) {
                 throw new QueryValidationException("SQL 参数数量不匹配");
             }
+            PersistedAgentRun analysisRun = evidenceSnapshotService.resolveAnalysisRun(
+                    userSubject, request.getWorkspaceId(), request.getRunId());
+            request.setAnalysisTaskId(analysisRun.getAnalysisTaskId());
             List<Map<String, Object>> rows = jdbcTemplate.query(
                     connection -> {
                         PreparedStatement statement = connection.prepareStatement(request.getSql());
@@ -62,7 +73,10 @@ public class QueryGateway {
                         return row;
                     });
             QueryResult result = result(queryId, QueryStatus.SUCCEEDED, rows, null, startedAt);
-            auditService.save(auditRecord(userSubject, request, queryId, parameterCount, result));
+            QueryAuditRecord audit = auditRecord(userSubject, request, queryId, parameterCount, result);
+            EvidenceSnapshotRecord snapshot = evidenceSnapshotService.persistSuccess(
+                    audit, analysisRun, result, validator.sourceTables(request.getSql()));
+            result.setEvidenceSnapshotId(snapshot.getEvidenceSnapshotId());
             return result;
         } catch (QueryValidationException exception) {
             QueryResult result = result(queryId, QueryStatus.REJECTED, List.of(), exception.getMessage(), startedAt);

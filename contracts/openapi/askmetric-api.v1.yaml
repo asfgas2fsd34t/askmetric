@@ -295,7 +295,7 @@ components:
           format: date-time
     ConversationSnapshot:
       type: object
-      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks]
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks, evidenceSnapshots]
       properties:
         conversationId:
           type: string
@@ -321,6 +321,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnalysisTask"
+        evidenceSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSnapshot"
     ConversationMessage:
       type: object
       required: [messageId, conversationId, author, sequence, content, createdAt]
@@ -399,6 +403,43 @@ components:
           type: string
         metricDefinitionVersionId:
           type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+    EvidenceSnapshot:
+      type: object
+      required: [evidenceSnapshotId, conversationId, analysisTaskId, runId, queryId, sourceTable, sourceRange, columns, rows, rowCount, durationMs, createdAt]
+      properties:
+        evidenceSnapshotId:
+          type: string
+        conversationId:
+          type: string
+        analysisTaskId:
+          type: string
+        runId:
+          type: string
+        queryId:
+          type: string
+        sourceTable:
+          type: string
+        sourceRange:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rowCount:
+          type: integer
+          minimum: 0
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 0
         createdAt:
           type: string
           format: date-time
@@ -482,6 +523,8 @@ components:
       properties:
         queryId:
           type: string
+        evidenceSnapshotId:
+          type: [string, "null"]
         status:
           type: string
           enum: [SUCCEEDED, REJECTED, FAILED]
@@ -502,4 +545,8 @@ components:
           format: int64
           minimum: 0
         reason:
+          type: [string, "null"]
+        sourceTable:
+          type: [string, "null"]
+        sourceRange:
           type: [string, "null"]

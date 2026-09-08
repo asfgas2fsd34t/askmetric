@@ -2,6 +2,7 @@ package dev.askmetric.server.conversation;
 
 import dev.askmetric.server.agent.PersistedAgentRun;
 import dev.askmetric.server.analysis.AnalysisTask;
+import dev.askmetric.server.evidence.EvidenceSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,4 +22,6 @@ public class ConversationSnapshot {
     private List<PersistedAgentRun> agentRuns = new ArrayList<>();
     /** Conversation 内已持久化的 Analysis Task。 */
     private List<AnalysisTask> analysisTasks = new ArrayList<>();
+    /** Conversation 内已持久化的 Evidence Snapshot。 */
+    private List<EvidenceSnapshot> evidenceSnapshots = new ArrayList<>();
 }

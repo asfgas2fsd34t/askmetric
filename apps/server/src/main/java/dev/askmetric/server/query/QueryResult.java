@@ -11,10 +11,16 @@ import lombok.NoArgsConstructor;
 public class QueryResult {
     /** 查询审计记录标识。 */
     private String queryId;
+    /** Evidence Snapshot 标识；仅成功查询返回。 */
+    private String evidenceSnapshotId;
     /** 查询最终状态。 */
     private QueryStatus status;
     /** 结果列名。 */
     private List<String> columns = List.of();
+    /** 证据来源表，多个来源表使用逗号分隔。 */
+    private String sourceTable;
+    /** 证据引用的数据范围。 */
+    private String sourceRange;
     /** 结果行；只包含策略允许的数据。 */
     private List<Map<String, Object>> rows = List.of();
     /** 实际返回行数。 */

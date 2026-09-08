@@ -58,6 +58,35 @@ public interface AgentRunMapper {
             """)
     boolean isTerminal(@Param("runId") String runId);
 
+    /** 读取当前用户 Workspace 内、已关联 Analysis Task 的分析型 Agent Run。 */
+    @ResultMap("persistedAgentRun")
+    @Select("""
+            select run.run_id, run.conversation_id, run.input_message_id,
+                   run.intent_route, run.intent_confidence, run.analysis_task_id,
+                   run.metric_definition_version_id, run.created_at
+            from agent_run run
+            join analysis_task task on task.analysis_task_id = run.analysis_task_id
+            join workspace_membership membership on membership.workspace_id = run.workspace_id
+            join lateral (
+                select event.event_type
+                from agent_run_event event
+                where event.run_id = run.run_id
+                order by event.sequence desc
+                limit 1
+            ) latest on latest.event_type in ('ACCEPTED', 'PROGRESS')
+            where run.run_id = #{runId}
+              and run.workspace_id = #{workspaceId}
+              and run.intent_route = 'ANALYSIS'
+              and task.workspace_id = run.workspace_id
+              and task.conversation_id = run.conversation_id
+              and task.status in ('ACTIVE', 'WAITING_FOR_INPUT')
+              and membership.user_subject = #{userSubject}
+            """)
+    Optional<PersistedAgentRun> findAnalysisRun(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("runId") String runId);
+
     /**
      * 为已授权用户在 Conversation 中创建运行。
      *

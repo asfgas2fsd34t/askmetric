@@ -2,6 +2,7 @@
 import {
   Building2,
   CircleDashed,
+  Database,
   LogOut,
   MessagesSquare,
   Plus,
@@ -40,6 +41,7 @@ const runSubscriptions = new Map<string, () => void>();
 const activeAgentRuns = computed(() => activeConversation.value?.agentRuns.filter((run) => !runIsTerminal(run)) ?? []);
 const activeAgentRun = computed(() => activeAgentRuns.value.at(-1));
 const activeAnalysisRun = computed(() => activeAgentRuns.value.findLast((run) => Boolean(run.analysisTaskId)));
+const evidenceSnapshots = computed(() => activeConversation.value?.evidenceSnapshots ?? []);
 const latestCancellation = computed(() => activeConversation.value?.agentRuns
   .flatMap((run) => run.auditEvents)
   .filter((event) => event.eventType === "agent.run.cancelled")
@@ -53,6 +55,12 @@ function stopRunSubscriptions() {
 function runIsTerminal(run: NonNullable<typeof activeConversation.value>["agentRuns"][number]) {
   const type = run.auditEvents.at(-1)?.eventType;
   return type === "agent.run.completed" || type === "agent.run.failed" || type === "agent.run.cancelled";
+}
+
+function formatEvidenceValue(value: unknown) {
+  if (value === null || value === undefined) return "空";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 async function activateConversation(snapshot: ConversationSnapshot | undefined, expectedConversationId?: string) {
@@ -416,6 +424,35 @@ onUnmounted(stopRunSubscriptions);
           <h1 id="workspace-heading">你好，{{ session.user.displayName }}</h1>
         </div>
       </section>
+
+      <aside class="evidence-panel" aria-labelledby="evidence-heading">
+        <div class="panel-heading">
+          <Database :size="17" aria-hidden="true" />
+          <h2 id="evidence-heading">证据快照</h2>
+        </div>
+        <div v-if="evidenceSnapshots.length === 0" class="evidence-empty">暂无证据</div>
+        <div v-else class="evidence-list">
+          <article v-for="snapshot in evidenceSnapshots" :key="snapshot.evidenceSnapshotId" class="evidence-card">
+            <header>
+              <strong>{{ snapshot.sourceTable }}</strong>
+              <small>{{ snapshot.sourceRange }}</small>
+            </header>
+            <p>{{ snapshot.rowCount }} 行 · {{ snapshot.durationMs }} ms</p>
+            <div class="evidence-columns">
+              <span v-for="column in snapshot.columns" :key="column">{{ column }}</span>
+            </div>
+            <div v-if="snapshot.rows.length > 0" class="evidence-preview">
+              <div v-for="(row, index) in snapshot.rows.slice(0, 3)" :key="index" class="evidence-row">
+                <span v-for="column in snapshot.columns" :key="column">
+                  <small>{{ column }}</small>
+                  <strong>{{ formatEvidenceValue(row[column]) }}</strong>
+                </span>
+              </div>
+              <small v-if="snapshot.rows.length > 3">仅预览前 3 行</small>
+            </div>
+          </article>
+        </div>
+      </aside>
     </main>
   </div>
 </template>

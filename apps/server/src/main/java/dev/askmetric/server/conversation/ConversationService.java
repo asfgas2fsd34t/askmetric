@@ -18,6 +18,7 @@ import dev.askmetric.server.analysis.AnalysisTaskMapper;
 import dev.askmetric.server.analysis.AnalysisTaskStatus;
 import dev.askmetric.server.catalog.MetricDefinitionService;
 import dev.askmetric.server.catalog.MetricDefinitionVersion;
+import dev.askmetric.server.evidence.EvidenceSnapshotService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +47,7 @@ public class ConversationService {
     private final DeterministicIntentRouter intentRouter;
     private final DeterministicChatReply deterministicChatReply;
     private final MetricDefinitionService metricDefinitionService;
+    private final EvidenceSnapshotService evidenceSnapshotService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
 
@@ -58,6 +60,7 @@ public class ConversationService {
             DeterministicIntentRouter intentRouter,
             DeterministicChatReply deterministicChatReply,
             MetricDefinitionService metricDefinitionService,
+            EvidenceSnapshotService evidenceSnapshotService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
         this.mapper = mapper;
@@ -68,6 +71,7 @@ public class ConversationService {
         this.intentRouter = intentRouter;
         this.deterministicChatReply = deterministicChatReply;
         this.metricDefinitionService = metricDefinitionService;
+        this.evidenceSnapshotService = evidenceSnapshotService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
     }
@@ -95,6 +99,7 @@ public class ConversationService {
                 agentRunMapper.auditEvents(userSubject, workspaceId, agentRun.getRunId())));
         snapshot.setAgentRuns(agentRuns);
         snapshot.setAnalysisTasks(analysisTaskMapper.tasks(userSubject, workspaceId, conversationId));
+        snapshot.setEvidenceSnapshots(evidenceSnapshotService.list(userSubject, workspaceId, conversationId));
         return snapshot;
     }
 
