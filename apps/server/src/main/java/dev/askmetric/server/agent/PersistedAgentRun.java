@@ -23,6 +23,8 @@ public class PersistedAgentRun {
     private BigDecimal intentConfidence;
     /** 实际关联的 Analysis Task；普通聊天为空。 */
     private String analysisTaskId;
+    /** 本次运行实际采用的指标定义版本；未执行指标分析时为空。 */
+    private String metricDefinitionVersionId;
     /** 创建时间。 */
     private Instant createdAt;
     /** 按序持久化的运行审计事件。 */

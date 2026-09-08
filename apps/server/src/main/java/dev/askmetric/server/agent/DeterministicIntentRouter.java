@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class DeterministicIntentRouter {
-    private static final List<String> CONTINUATION_PREFIXES = List.of("继续", "补充", "按", "只看", "聚焦", "细分");
+    private static final List<String> CONTINUATION_PREFIXES = List.of(
+            "继续", "补充", "按", "只看", "聚焦", "细分", "使用标准", "使用自定义", "自定义口径");
     private static final List<String> SWITCH_PREFIXES = List.of("切换", "改为", "换成", "转为", "另起");
 
     public IntentDecision route(String message) {

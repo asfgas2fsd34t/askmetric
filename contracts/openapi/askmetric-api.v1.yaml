@@ -346,6 +346,8 @@ components:
           maximum: 1
         analysisTaskId:
           type: [string, "null"]
+        metricDefinitionVersionId:
+          type: [string, "null"]
         createdAt:
           type: string
           format: date-time
@@ -368,6 +370,8 @@ components:
           enum: [active, waiting_for_input, waiting_for_approval, completed, failed, cancelled]
         sourceAgentRunId:
           type: string
+        metricDefinitionVersionId:
+          type: [string, "null"]
         createdAt:
           type: string
           format: date-time

@@ -108,6 +108,31 @@ public interface AgentRunMapper {
             @Param("runId") String runId,
             @Param("analysisTaskId") String analysisTaskId);
 
+    /** 将已确认且属于同一 Workspace 的指标版本绑定到本次 Agent Run。 */
+    @org.apache.ibatis.annotations.Update("""
+            update agent_run run
+            set metric_definition_version_id = #{metricDefinitionVersionId}
+            where run.run_id = #{runId}
+              and run.workspace_id = #{workspaceId}
+              and run.analysis_task_id = #{analysisTaskId}
+              and run.metric_definition_version_id is null
+              and exists (
+                  select 1
+                  from metric_definition_version definition
+                  join workspace_membership membership
+                    on membership.workspace_id = definition.workspace_id
+                  where definition.metric_definition_version_id = #{metricDefinitionVersionId}
+                    and definition.workspace_id = run.workspace_id
+                    and membership.user_subject = #{userSubject}
+              )
+            """)
+    int bindMetricDefinition(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("runId") String runId,
+            @Param("analysisTaskId") String analysisTaskId,
+            @Param("metricDefinitionVersionId") String metricDefinitionVersionId);
+
     /** 追加一条不可变的 Agent Run 审计事件。 */
     @Insert("""
             insert into agent_run_event (
@@ -259,11 +284,13 @@ public interface AgentRunMapper {
             @Result(column = "intent_route", property = "intentRoute"),
             @Result(column = "intent_confidence", property = "intentConfidence"),
             @Result(column = "analysis_task_id", property = "analysisTaskId"),
+            @Result(column = "metric_definition_version_id", property = "metricDefinitionVersionId"),
             @Result(column = "created_at", property = "createdAt")
     })
     @Select("""
             select run.run_id, run.conversation_id, run.input_message_id,
                    run.intent_route, run.intent_confidence, run.analysis_task_id,
+                   run.metric_definition_version_id,
                    run.created_at
             from agent_run run
             join workspace_membership membership on membership.workspace_id = run.workspace_id
