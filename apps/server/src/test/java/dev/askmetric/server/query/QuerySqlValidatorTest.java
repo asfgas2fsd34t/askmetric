@@ -36,6 +36,35 @@ class QuerySqlValidatorTest {
         assertRejected("select * from demo_warehouse.monthly_mrr", "通配符");
     }
 
+    @Test
+    void acceptsTableQualifiedColumnsInJoinedDrilldownQueries() {
+        String sql = """
+                select segment.segment_code, event.plan_code, event.event_type, event.mrr_delta_cents
+                from demo_warehouse.subscription_event event
+                join demo_warehouse.customer_account account on account.customer_id = event.customer_id
+                join demo_warehouse.customer_segment segment on segment.segment_code = account.segment_code
+                where event.event_date >= '2025-06-01' and event.event_date < '2025-07-01'
+                """;
+
+        assertThat(validator.validate(sql)).isZero();
+    }
+
+    @Test
+    void rejectsUnregisteredColumnsAfterAQualifier() {
+        assertRejected(
+                "select segment.unknown_metric from demo_warehouse.customer_segment segment",
+                "字段未登记");
+    }
+
+    @Test
+    void rejectsQualifiedWildcards() {
+        assertRejected(
+                "select event.* from demo_warehouse.subscription_event event",
+                "通配符");
+        assertThat(validator.validate(
+                "select count(*) from demo_warehouse.subscription_event")).isZero();
+    }
+
     private void assertRejected(String sql, String message) {
         assertThatThrownBy(() -> validator.validate(sql))
                 .isInstanceOf(QueryValidationException.class)

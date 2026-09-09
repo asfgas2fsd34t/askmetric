@@ -178,6 +178,7 @@ services:
       ROCKETMQ_ENDPOINTS: proxy:8081
       ROCKETMQ_REQUEST_TOPIC: ${ROCKETMQ_REQUEST_TOPIC:-askmetric-agent-run-request}
       ROCKETMQ_EVENT_TOPIC: ${ROCKETMQ_EVENT_TOPIC:-askmetric-agent-run-event}
+      SERVER_BASE_URL: http://server:8080
 
   checkpoint-probe:
     profiles: ["checkpoint"]

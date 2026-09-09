@@ -211,8 +211,8 @@ public interface AgentRunMapper {
               and (
                   (latest.event_type = 'ACCEPTED'
                       and #{eventType} in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'FAILED'))
-                  or (latest.event_type in ('PROGRESS', 'CLARIFICATION', 'PLAN')
-                      and #{eventType} in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'COMPLETED', 'FAILED'))
+                  or (latest.event_type in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'FINDING')
+                      and #{eventType} in ('PROGRESS', 'CLARIFICATION', 'PLAN', 'FINDING', 'COMPLETED', 'FAILED'))
               )
             on conflict do nothing
             """)
@@ -249,7 +249,7 @@ public interface AgentRunMapper {
                   and run.conversation_id = #{conversationId}
                   and run.workspace_id = #{workspaceId}
                   and membership.user_subject = #{userSubject}
-                  and latest.event_type in ('ACCEPTED', 'PROGRESS', 'PLAN')
+                  and latest.event_type in ('ACCEPTED', 'PROGRESS', 'PLAN', 'FINDING')
                   and task.status in ('ACTIVE', 'WAITING_FOR_INPUT', 'WAITING_FOR_APPROVAL')
                 for update of run, task
             ), cancelled_event as (
@@ -290,6 +290,20 @@ public interface AgentRunMapper {
             where run_id = #{runId}
             """)
     long latestSequence(@Param("runId") String runId);
+
+    /** 读取 Agent Run 的工作区、会话和发起人，供 Agent 查询端点替代终端用户身份执行治理查询。 */
+    @Results(id = "agentRunContext", value = {
+            @Result(column = "workspace_id", property = "workspaceId"),
+            @Result(column = "conversation_id", property = "conversationId"),
+            @Result(column = "author_subject", property = "authorSubject")
+    })
+    @Select("""
+            select run.workspace_id, run.conversation_id, message.author_subject
+            from agent_run run
+            join conversation_message message on message.message_id = run.input_message_id
+            where run.run_id = #{runId}
+            """)
+    Optional<AgentRunContext> findRunContext(@Param("runId") String runId);
 
     /** 读取 Agent Run 的完整事件，用于 SSE 连接建立或应用重启后的恢复。 */
     @Results(id = "agentRunEvent", value = {

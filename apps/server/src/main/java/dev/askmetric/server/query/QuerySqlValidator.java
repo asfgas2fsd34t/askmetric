@@ -108,8 +108,17 @@ public class QuerySqlValidator {
         if (!select.find()) {
             return;
         }
-        Matcher identifiers = IDENTIFIER.matcher(select.group(1));
+        String selectList = select.group(1);
+        // 限定通配符（如 event.*）同样未展开字段，不允许绕过字段登记。
+        if (selectList.matches("(?s).*\\.\\s*\\*.*")) {
+            throw new QueryValidationException("不允许使用未展开字段的通配符");
+        }
+        Matcher identifiers = IDENTIFIER.matcher(selectList);
         while (identifiers.find()) {
+            // 限定列名里点号前的表名或别名不是字段本身，只校验限定符之后的列名。
+            if (identifiers.end() < selectList.length() && selectList.charAt(identifiers.end()) == '.') {
+                continue;
+            }
             String identifier = identifiers.group();
             if (!REGISTERED_COLUMNS.contains(identifier) && !SQL_IDENTIFIERS.contains(identifier)) {
                 throw new QueryValidationException("字段未登记在语义目录中: " + identifier);

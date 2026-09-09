@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-run-queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute a governed query on behalf of an Agent Run using a Java-minted query grant
+         * @description Python Agent Runtime entry; identity comes from the short-lived HMAC query grant bound to the run, not an end-user JWT.
+         */
+        post: operations["executeGovernedQueryForAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -166,6 +186,21 @@ export interface components {
             agentRuns: components["schemas"]["AgentRun"][];
             analysisTasks: components["schemas"]["AnalysisTask"][];
             evidenceSnapshots: components["schemas"]["EvidenceSnapshot"][];
+            analysisFindings: components["schemas"]["AnalysisFinding"][];
+        };
+        AnalysisFinding: {
+            findingId: string;
+            conversationId: string;
+            analysisTaskId: string;
+            runId: string;
+            metricDefinitionVersionId: string;
+            verified: boolean;
+            conclusion: string;
+            evidenceSnapshotIds: string[];
+            assumptions: string[];
+            uncertainties: string[];
+            /** Format: date-time */
+            createdAt: string;
         };
         ConversationMessage: {
             messageId: string;
@@ -233,7 +268,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.clarification" | "agent.run.plan" | "agent.run.completed" | "agent.run.failed" | "agent.run.cancelled";
+            eventType: "agent.run.accepted" | "agent.run.progress" | "agent.run.clarification" | "agent.run.plan" | "agent.run.finding" | "agent.run.completed" | "agent.run.failed" | "agent.run.cancelled";
             /** Format: date-time */
             occurredAt: string;
             message: string;
@@ -259,6 +294,12 @@ export interface components {
             workspaceId?: string;
             analysisTaskId?: string | null;
             runId?: string | null;
+            sql: string;
+            parameters?: unknown[];
+        };
+        AgentQueryRequest: {
+            /** @description The Agent Run whose grant authorizes the query; workspace is derived from it. */
+            runId: string;
             sql: string;
             parameters?: unknown[];
         };
@@ -371,6 +412,54 @@ export interface operations {
             };
             /** @description Query execution failed */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    executeGovernedQueryForAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Query grant issued with the agent.run.requested message. */
+                "X-Query-Grant": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Query result with an Evidence Snapshot reference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResult"];
+                };
+            };
+            /** @description Missing fields or query violates the governance policy */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Query grant is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Agent Run not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

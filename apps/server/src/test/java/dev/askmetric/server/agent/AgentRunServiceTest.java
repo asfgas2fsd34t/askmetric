@@ -91,7 +91,9 @@ class AgentRunServiceTest {
         when(outbox.enqueue(any(), any(), any(), any(), any())).thenReturn(1);
 
         Optional<AgentRunEvent> result = new AgentRunService(
-                        sseHub, mapper, outbox, objectMapper, "request-topic")
+                        sseHub, mapper, outbox,
+                        mock(dev.askmetric.server.analysis.AnalysisFindingService.class),
+                        objectMapper, "request-topic")
                 .cancel("user-1", "workspace-demo", "conversation-1", "run-1", "用户主动停止分析");
 
         assertThat(result).contains(cancelled);
@@ -109,7 +111,10 @@ class AgentRunServiceTest {
 
     private static AgentRunService service(
             AgentRunSseHub sseHub, AgentRunMapper mapper, AgentRunOutboxMapper outbox) {
-        return new AgentRunService(sseHub, mapper, outbox, new ObjectMapper(), "request-topic");
+        return new AgentRunService(
+                sseHub, mapper, outbox,
+                mock(dev.askmetric.server.analysis.AnalysisFindingService.class),
+                new ObjectMapper(), "request-topic");
     }
 
     private static AgentRunEvent event(String eventId, AgentRunEventType eventType, long sequence) {

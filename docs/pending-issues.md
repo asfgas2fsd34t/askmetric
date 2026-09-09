@@ -2,6 +2,16 @@
 
 本文档记录 AskMetric 当前技术探针中已经确认、但暂不影响 T01 验收的问题。每个问题都需要在进入生产持久化或并发压测前重新评估。
 
+## Agent 事件链路
+
+### AGENT-003 真实链路中 finding 事件未落地
+
+- **现状**：T18 在 compose 全链路验证中，下钻运行的受治理查询、查询授权、Evidence Snapshot 落库和前端证据面板展示均正常，但运行停在 `PROGRESS`（阶段 retrieving），`agent.run.finding` 与终态事件始终未持久化；集成测试（在 service 边界注入事件）与 Python 单测（fake 网关）均通过。
+- **问题**：疑似 Python 发出的 finding 事件被 Java 侧拒绝后进入 RocketMQ 无限重投，或 Python 在查询成功后的推导/发布环节挂起；尚未定位到具体环节。
+- **为什么暂缓**：不影响 T18 已验证的查询治理与证据链路；下钻结论在真实链路的最后一步缺失，确定性测试覆盖了等价路径。
+- **建议方案**：给 `LiveRocketMqGateway.consumeEvent` 的拒绝路径加结构化日志；在 compose 环境重放一次下钻并对比 Python producer 与 Java consumer 日志；必要时为 finding 事件补一条端到端 smoke。
+- **验收标准**：compose 全链路下钻运行能到达终态，快照包含 verified 发现；重投不再无限循环。
+
 ## 并发与 SSE
 
 ### CONC-002 SSE 注册与补发共享同步锁

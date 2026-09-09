@@ -2,6 +2,7 @@ package dev.askmetric.server.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.askmetric.server.analysis.AnalysisFindingService;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ public class AgentRunService {
     private final AgentRunSseHub sseHub;
     private final AgentRunMapper agentRunMapper;
     private final AgentRunOutboxMapper outboxMapper;
+    private final AnalysisFindingService analysisFindingService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
 
@@ -22,11 +24,13 @@ public class AgentRunService {
             AgentRunSseHub sseHub,
             AgentRunMapper agentRunMapper,
             AgentRunOutboxMapper outboxMapper,
+            AnalysisFindingService analysisFindingService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
         this.sseHub = sseHub;
         this.agentRunMapper = agentRunMapper;
         this.outboxMapper = outboxMapper;
+        this.analysisFindingService = analysisFindingService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
     }
@@ -43,6 +47,9 @@ public class AgentRunService {
                 event.getMessage(),
                 event.getSource());
         if (inserted == 1) {
+            if (event.getEventType() == AgentRunEventType.FINDING) {
+                persistFinding(event);
+            }
             publishAfterCommit(event.getConversationId(), event.getRunId());
             return;
         }
@@ -57,6 +64,26 @@ public class AgentRunService {
             return;
         }
         throw new IllegalArgumentException("Agent Run event was not accepted: " + event.getEventId());
+    }
+
+    /**
+     * 将 finding 事件的结构化载荷持久化为已验证发现；
+     * 运行、口径版本或证据快照归属校验失败时抛出异常，整个事件事务一并回滚。
+     */
+    private void persistFinding(AgentRunEvent event) {
+        AgentRunFinding finding = event.getFinding();
+        if (analysisFindingService.persist(
+                "analysis_finding_" + event.getEventId(),
+                event.getRunId(),
+                finding.getMetricDefinitionVersionId(),
+                finding.isVerified(),
+                finding.getConclusion(),
+                finding.getEvidenceSnapshotIds(),
+                finding.getAssumptions(),
+                finding.getUncertainties()) != 1) {
+            throw new IllegalArgumentException(
+                    "Analysis Finding was not accepted: " + event.getEventId());
+        }
     }
 
     public boolean exists(String workspaceId, String conversationId, String runId) {
