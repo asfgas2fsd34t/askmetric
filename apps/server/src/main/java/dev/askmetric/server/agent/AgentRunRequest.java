@@ -24,6 +24,8 @@ public class AgentRunRequest {
     private String message;
     private String taskGoal;
     private Long lastEventSequence;
+    private String metricDefinitionVersionId;
+    private String queryGrant;
 
     @JsonCreator
     public AgentRunRequest(
@@ -36,7 +38,7 @@ public class AgentRunRequest {
             @JsonProperty("runId") String runId,
             @JsonProperty("message") String message) {
         this(eventId, schemaVersion, eventType, sequence, occurredAt,
-                conversationId, runId, message, null, null);
+                conversationId, runId, message, null, null, null, null);
     }
 
     public AgentRunRequest(
@@ -49,7 +51,9 @@ public class AgentRunRequest {
             String runId,
             String message,
             String taskGoal,
-            Long lastEventSequence) {
+            Long lastEventSequence,
+            String metricDefinitionVersionId,
+            String queryGrant) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
@@ -75,6 +79,12 @@ public class AgentRunRequest {
         if (lastEventSequence != null && lastEventSequence < 0) {
             throw new IllegalArgumentException("lastEventSequence must not be negative");
         }
+        if (metricDefinitionVersionId != null && metricDefinitionVersionId.isBlank()) {
+            throw new IllegalArgumentException("metricDefinitionVersionId must not be blank");
+        }
+        if (queryGrant != null && queryGrant.isBlank()) {
+            throw new IllegalArgumentException("queryGrant must not be blank");
+        }
         this.eventId = eventId;
         this.schemaVersion = schemaVersion;
         this.eventType = eventType;
@@ -85,6 +95,8 @@ public class AgentRunRequest {
         this.message = message;
         this.taskGoal = taskGoal;
         this.lastEventSequence = lastEventSequence;
+        this.metricDefinitionVersionId = metricDefinitionVersionId;
+        this.queryGrant = queryGrant;
     }
 
     private static void requireText(String value, String field) {

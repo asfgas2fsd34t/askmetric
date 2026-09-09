@@ -19,6 +19,8 @@ public enum AgentRunEventType {
     CLARIFICATION("agent.run.clarification"),
     /** Python 已生成分析计划并展示下钻步骤。 */
     PLAN("agent.run.plan"),
+    /** Python 已产出基于 Evidence Snapshot 的结构化已验证发现。 */
+    FINDING("agent.run.finding"),
     /** Python 已产生运行结果。 */
     COMPLETED("agent.run.completed"),
     /** Java 或 Python 已确认运行失败。 */

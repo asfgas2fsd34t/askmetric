@@ -3,10 +3,18 @@ import logging
 import os
 import signal
 import threading
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+
+from agent_runtime.mrr_drilldown import (
+    DRILLDOWN_QUERIES,
+    derive_finding,
+    is_drilldown_run,
+    is_mrr_run,
+)
 
 from jsonschema import Draft202012Validator, FormatChecker
 from rocketmq import (
@@ -36,6 +44,7 @@ class AgentRunEventType(str, Enum):
     ACCEPTED = "agent.run.accepted"  # 运行已进入队列。
     PROGRESS = "agent.run.progress"  # Python 正在处理运行。
     PLAN = "agent.run.plan"  # Python 已生成分析计划并展示下钻步骤。
+    FINDING = "agent.run.finding"  # Python 已产出基于 Evidence Snapshot 的已验证发现。
     COMPLETED = "agent.run.completed"  # 运行已产生最终结果。
     FAILED = "agent.run.failed"  # 运行以失败终止。
 
@@ -82,6 +91,7 @@ def event(
     event_type: AgentRunEventType,
     sequence: int,
     message: str,
+    finding: dict | None = None,
 ) -> dict:
     payload = {
         # 重投同一请求时生成同一个事件 ID，Java 端据此去重，而不是重复写入进度或终态。
@@ -98,6 +108,8 @@ def event(
         "message": message,
         "source": AgentRunEventSource.PYTHON.value,
     }
+    if finding is not None:
+        payload["finding"] = finding
     validate_event_payload(payload)
     return payload
 
@@ -122,6 +134,43 @@ def first_event_sequence(request: dict) -> int:
     return int(request.get("lastEventSequence", 1)) + 1
 
 
+def server_base_url() -> str:
+    return os.getenv("SERVER_BASE_URL", "http://localhost:8080").rstrip("/")
+
+
+def post_governed_query(base_url: str, query_grant: str, run_id: str, sql: str) -> dict:
+    """用运行绑定的查询授权调用 Java Query Gateway；任何非 2xx 都会抛给失败终态处理。"""
+    payload = json.dumps({"runId": run_id, "sql": sql}).encode("utf-8")
+    outgoing = urllib.request.Request(
+        base_url + "/api/v1/agent-run-queries",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-Query-Grant": query_grant},
+        method="POST",
+    )
+    with urllib.request.urlopen(outgoing, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def execute_drilldown(request: dict) -> dict:
+    """执行受治理下钻：检索证据、推导已验证发现；缺少授权视为运行失败。"""
+    query_grant = request.get("queryGrant")
+    if not query_grant:
+        raise RuntimeError("缺少查询授权，无法执行受治理下钻")
+    metric_version = request.get("metricDefinitionVersionId")
+    if not metric_version:
+        raise RuntimeError("缺少已确认的指标定义版本，无法执行受治理下钻")
+    results = [
+        post_governed_query(server_base_url(), query_grant, request["runId"], sql)
+        for sql in DRILLDOWN_QUERIES
+    ]
+    return derive_finding(
+        results[0].get("rows") or [],
+        results[1].get("rows") or [],
+        metric_version,
+        [result["evidenceSnapshotId"] for result in results if result.get("evidenceSnapshotId")],
+    )
+
+
 # MRR 参考场景的固定下钻步骤；口径已由 Java 确认后才进入该计划。
 MRR_PLAN_STEPS = (
     "按月汇总已确认口径的 MRR 基线",
@@ -138,12 +187,6 @@ GENERIC_PLAN_STEPS = (
     "验证证据与假设",
     "汇总结论与不确定性",
 )
-
-
-def is_mrr_run(request: dict) -> bool:
-    # 确认口径的消息不一定包含 MRR 字样，因此同时参考任务目标。
-    text = f"{request.get('message', '')} {request.get('taskGoal', '')}"
-    return "mrr" in text.lower() or "月度经常性收入" in text
 
 
 def build_plan_steps(request: dict) -> tuple[str, ...]:
@@ -192,36 +235,49 @@ class AgentListener(MessageListener):
                 return ConsumeResult.FAILURE
 
     def _emit_run(self, request: dict) -> None:
-        # RocketMQ 至少一次投递；此状态机保证同一请求在本进程内最多发出一组计划和终态。
+        # RocketMQ 至少一次投递；此状态机保证同一请求在本进程内最多发出一组阶段和终态事件。
+        drilldown = is_drilldown_run(request)
         base_sequence = first_event_sequence(request)
         with self._state_lock:
             state = self._states.setdefault(
                 request["runId"],
-                {"plan": False, "completed": False, "failed": False, "cancelled": False},
+                {"started": False, "finding": False, "completed": False, "failed": False, "cancelled": False},
             )
             if state["failed"] or state["completed"] or state["cancelled"]:
                 return
-            if not state["plan"]:
-                self.publish(event(request, AgentRunEventType.PLAN, base_sequence, plan_message(request)))
-                state["plan"] = True
-            if state["cancelled"]:
+            if not state["started"]:
+                self.publish(event(
+                    request,
+                    AgentRunEventType.PROGRESS if drilldown else AgentRunEventType.PLAN,
+                    base_sequence,
+                    "阶段 retrieving：通过 Java Query Gateway 检索受治理证据" if drilldown
+                    else plan_message(request)))
+                # 阶段事件既已投递就视为运行已启动，后续失败可以安全接终态。
+                state["started"] = True
+        # 受治理查询是网络 I/O，不持有状态锁，取消请求可以被及时观察到。
+        finding = execute_drilldown(request) if drilldown else None
+        with self._state_lock:
+            if state["failed"] or state["completed"] or state["cancelled"]:
                 return
+            if drilldown and not state["finding"]:
+                self.publish(event(
+                    request, AgentRunEventType.FINDING, base_sequence + 1,
+                    finding["conclusion"], finding=finding))
+                state["finding"] = True
             if not state["completed"]:
-                self.publish(
-                    event(
-                        request,
-                        AgentRunEventType.COMPLETED,
-                        base_sequence + 1,
-                        completed_message(request),
-                    )
-                )
+                self.publish(event(
+                    request,
+                    AgentRunEventType.COMPLETED,
+                    base_sequence + 2 if drilldown else base_sequence + 1,
+                    "下钻完成：结构化发现已提交并关联证据快照" if drilldown
+                    else completed_message(request)))
                 state["completed"] = True
 
     def _cancel_run(self, request: dict) -> None:
         with self._state_lock:
             state = self._states.setdefault(
                 request["runId"],
-                {"plan": False, "completed": False, "failed": False, "cancelled": False},
+                {"started": False, "finding": False, "completed": False, "failed": False, "cancelled": False},
             )
             if not state["completed"] and not state["failed"]:
                 state["cancelled"] = True
@@ -231,13 +287,13 @@ class AgentListener(MessageListener):
         with self._state_lock:
             state = self._states.setdefault(
                 request["runId"],
-                {"plan": False, "completed": False, "failed": False, "cancelled": False},
+                {"started": False, "finding": False, "completed": False, "failed": False, "cancelled": False},
             )
             if state["failed"] or state["completed"] or state["cancelled"]:
                 return
-            if not state["plan"]:
-                # 先确认计划事件的投递，才能安全地产生下一序号的失败终态。
-                raise RuntimeError("计划事件尚未确认投递，等待 RocketMQ 重投")
+            if not state["started"]:
+                # 先确认第一个阶段事件的投递，才能安全地产生下一序号的失败终态。
+                raise RuntimeError("阶段事件尚未确认投递，等待 RocketMQ 重投")
             self.publish(event(request, AgentRunEventType.FAILED, base_sequence + 1, "Agent Run 处理失败"))
             state["failed"] = True
 

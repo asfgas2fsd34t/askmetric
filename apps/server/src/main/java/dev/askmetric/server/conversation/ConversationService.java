@@ -2,6 +2,7 @@ package dev.askmetric.server.conversation;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.askmetric.server.agent.AgentQueryGrantService;
 import dev.askmetric.server.agent.AgentRunEventSource;
 import dev.askmetric.server.agent.AgentRunEventType;
 import dev.askmetric.server.agent.AgentRunIntentRoute;
@@ -12,6 +13,7 @@ import dev.askmetric.server.agent.AnalysisTaskCommand;
 import dev.askmetric.server.agent.DeterministicIntentRouter;
 import dev.askmetric.server.agent.IntentDecision;
 import dev.askmetric.server.agent.PersistedAgentRun;
+import dev.askmetric.server.analysis.AnalysisFindingService;
 import dev.askmetric.server.analysis.AnalysisTask;
 import dev.askmetric.server.analysis.AnalysisTaskEventType;
 import dev.askmetric.server.analysis.AnalysisTaskMapper;
@@ -48,6 +50,8 @@ public class ConversationService {
     private final DeterministicChatReply deterministicChatReply;
     private final MetricDefinitionService metricDefinitionService;
     private final EvidenceSnapshotService evidenceSnapshotService;
+    private final AnalysisFindingService analysisFindingService;
+    private final AgentQueryGrantService queryGrantService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
 
@@ -61,6 +65,8 @@ public class ConversationService {
             DeterministicChatReply deterministicChatReply,
             MetricDefinitionService metricDefinitionService,
             EvidenceSnapshotService evidenceSnapshotService,
+            AnalysisFindingService analysisFindingService,
+            AgentQueryGrantService queryGrantService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
         this.mapper = mapper;
@@ -72,6 +78,8 @@ public class ConversationService {
         this.deterministicChatReply = deterministicChatReply;
         this.metricDefinitionService = metricDefinitionService;
         this.evidenceSnapshotService = evidenceSnapshotService;
+        this.analysisFindingService = analysisFindingService;
+        this.queryGrantService = queryGrantService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
     }
@@ -100,6 +108,7 @@ public class ConversationService {
         snapshot.setAgentRuns(agentRuns);
         snapshot.setAnalysisTasks(analysisTaskMapper.tasks(userSubject, workspaceId, conversationId));
         snapshot.setEvidenceSnapshots(evidenceSnapshotService.list(userSubject, workspaceId, conversationId));
+        snapshot.setAnalysisFindings(analysisFindingService.list(userSubject, workspaceId, conversationId));
         return snapshot;
     }
 
@@ -162,7 +171,7 @@ public class ConversationService {
                     conversationId,
                     content,
                     processed.getAnalysisTask().getGoal(),
-                    processed.getAgentRun().getRunId());
+                    processed.getAgentRun());
         }
         completeIdempotency(reservation, processed);
         return processed;
@@ -221,7 +230,13 @@ public class ConversationService {
         }
     }
 
-    private void enqueueAnalysisRun(String conversationId, String message, String taskGoal, String runId) {
+    private void enqueueAnalysisRun(String conversationId, String message, String taskGoal, PersistedAgentRun run) {
+        String runId = run.getRunId();
+        String metricDefinitionVersionId = run.getMetricDefinitionVersionId();
+        // 口径已确认的运行才签发查询授权；未确认口径的运行没有任何受治理查询能力。
+        String queryGrant = metricDefinitionVersionId == null
+                ? null
+                : queryGrantService.mint(runId, java.time.Instant.now());
         AgentRunRequest request = new AgentRunRequest(
                 "agent_run_request_" + runId,
                 1,
@@ -232,7 +247,9 @@ public class ConversationService {
                 runId,
                 message,
                 taskGoal,
-                agentRunMapper.latestSequence(runId));
+                agentRunMapper.latestSequence(runId),
+                metricDefinitionVersionId,
+                queryGrant);
         try {
             String payload = objectMapper.writeValueAsString(request);
             if (outboxMapper.enqueue(

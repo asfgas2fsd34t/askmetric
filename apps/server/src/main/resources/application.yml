@@ -30,6 +30,9 @@ spring:
           jwk-set-uri: ${OIDC_JWK_SET_URI:http://localhost:8082/realms/askmetric/protocol/openid-connect/certs}
 
 askmetric:
+  agent-query:
+    secret: ${AGENT_QUERY_SECRET:askmetric-dev-agent-query-secret}
+    grant-ttl-seconds: ${AGENT_QUERY_GRANT_TTL_SECONDS:3600}
   query:
     datasource:
       url: ${QUERY_DATABASE_URL:jdbc:postgresql://localhost:5433/askmetric_demo_warehouse}

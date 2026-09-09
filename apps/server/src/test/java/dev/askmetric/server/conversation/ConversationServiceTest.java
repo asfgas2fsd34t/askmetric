@@ -80,6 +80,8 @@ class ConversationServiceTest {
                 new DeterministicChatReply(),
                 metricDefinitionService,
                 evidenceSnapshotService,
+                mock(dev.askmetric.server.analysis.AnalysisFindingService.class),
+                mock(dev.askmetric.server.agent.AgentQueryGrantService.class),
                 new ObjectMapper().findAndRegisterModules(),
                 "askmetric-agent-run-request");
 

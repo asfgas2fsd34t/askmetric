@@ -21,6 +21,9 @@ public class AgentRunEvent {
     private String runId;
     private String message;
     private AgentRunEventSource source;
+    /** 仅 finding 事件携带；其余事件序列化时省略，保持 v1 契约形状。 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private AgentRunFinding finding;
 
     @JsonCreator
     public AgentRunEvent(
@@ -33,6 +36,21 @@ public class AgentRunEvent {
             @JsonProperty("runId") String runId,
             @JsonProperty("message") String message,
             @JsonProperty("source") AgentRunEventSource source) {
+        this(eventId, schemaVersion, eventType, sequence, occurredAt,
+                conversationId, runId, message, source, null);
+    }
+
+    public AgentRunEvent(
+            String eventId,
+            int schemaVersion,
+            AgentRunEventType eventType,
+            long sequence,
+            Instant occurredAt,
+            String conversationId,
+            String runId,
+            String message,
+            AgentRunEventSource source,
+            AgentRunFinding finding) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
@@ -55,6 +73,12 @@ public class AgentRunEvent {
         if (message.length() > 4000) {
             throw new IllegalArgumentException("message must be at most 4000 characters");
         }
+        if (eventType == AgentRunEventType.FINDING && finding == null) {
+            throw new IllegalArgumentException("finding events must carry a finding payload");
+        }
+        if (eventType != AgentRunEventType.FINDING && finding != null) {
+            throw new IllegalArgumentException("only finding events may carry a finding payload");
+        }
         this.eventId = eventId;
         this.schemaVersion = schemaVersion;
         this.eventType = eventType;
@@ -64,6 +88,7 @@ public class AgentRunEvent {
         this.runId = runId;
         this.message = message;
         this.source = source;
+        this.finding = finding;
     }
 
     private static void requireText(String value, String field) {
