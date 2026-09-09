@@ -80,7 +80,8 @@ public class AgentRunService {
                 finding.getConclusion(),
                 finding.getEvidenceSnapshotIds(),
                 finding.getAssumptions(),
-                finding.getUncertainties()) != 1) {
+                finding.getUncertainties(),
+                finding.getKnowledgeCitations()) != 1) {
             throw new IllegalArgumentException(
                     "Analysis Finding was not accepted: " + event.getEventId());
         }

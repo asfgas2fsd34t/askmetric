@@ -84,6 +84,92 @@ paths:
           description: Query grant is invalid or expired
         "404":
           description: Agent Run not found
+  /api/v1/knowledge-sources:
+    post:
+      operationId: uploadKnowledgeSource
+      summary: Upload a text-based knowledge source and ingest it
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 文本型 PDF、Markdown 或纯文本文件，最大 5MB。
+                title:
+                  type: string
+                  maxLength: 200
+      responses:
+        "201":
+          description: 摄取完成（失败时状态为 FAILED）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeSource"
+        "400":
+          description: 参数或类型不支持
+        "413":
+          description: 上传内容超出大小限制
+    get:
+      operationId: listKnowledgeSources
+      summary: List knowledge sources in the current Workspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 来源列表（不含全文）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeSource"
+  /api/v1/agent-run-knowledge:
+    get:
+      operationId: retrieveKnowledgeForAgentRun
+      summary: Retrieve knowledge passages for an Agent Run using a Java-minted query grant
+      description: Python Agent Runtime entry; results contain citation data only and never influence policies or tools.
+      parameters:
+        - name: X-Query-Grant
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 检索到的知识段落（最多 3 条）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeRetrievalItem"
+        "400":
+          description: 缺少参数
+        "401":
+          description: 查询授权无效或过期
+        "404":
+          description: Agent Run 不存在
   /api/v1/conversations:
     get:
       operationId: listConversations
@@ -391,9 +477,68 @@ components:
           type: array
           items:
             type: string
+        knowledgeCitations:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeCitation"
         createdAt:
           type: string
           format: date-time
+    KnowledgeSource:
+      type: object
+      required: [knowledgeSourceId, workspaceId, title, filename, contentType, byteSize, status, passageCount, createdAt]
+      properties:
+        knowledgeSourceId:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        filename:
+          type: string
+        contentType:
+          type: string
+          enum: [text/plain, text/markdown, application/pdf]
+        byteSize:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [UPLOADED, READY, FAILED]
+        failureReason:
+          type: [string, "null"]
+        passageCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        ingestedAt:
+          type: [string, "null"]
+          format: date-time
+    KnowledgeCitation:
+      type: object
+      required: [knowledgeSourceId, passageNumber, quote]
+      properties:
+        knowledgeSourceId:
+          type: string
+        passageNumber:
+          type: integer
+          minimum: 1
+        quote:
+          type: string
+    KnowledgeRetrievalItem:
+      type: object
+      required: [knowledgeSourceId, title, passageNumber, quote]
+      properties:
+        knowledgeSourceId:
+          type: string
+        title:
+          type: string
+        passageNumber:
+          type: integer
+          minimum: 1
+        quote:
+          type: string
     ConversationMessage:
       type: object
       required: [messageId, conversationId, author, sequence, content, createdAt]

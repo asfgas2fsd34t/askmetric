@@ -116,6 +116,7 @@ class AgentRunEventContractTest {
                         true,
                         List.of("evidence_snapshot_1"),
                         List.of("月末 MRR 由订阅事件累计重建"),
+                        List.of(),
                         List.of()));
 
         validator.validateEvent(event);

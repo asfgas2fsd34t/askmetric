@@ -13,16 +13,17 @@ import org.apache.ibatis.annotations.Select;
 public interface AnalysisFindingMapper {
     /**
      * 持久化一条已验证发现；运行必须存在、口径已绑定同一指标版本，
-     * 且引用的每个 Evidence Snapshot 都属于同一运行，否则不插入。
+     * 引用的每个 Evidence Snapshot 都属于同一运行，且每条知识引用都解析到本工作区的段落，
+     * 否则不插入。
      */
     @Insert("""
             insert into analysis_finding (
                 finding_id, workspace_id, analysis_task_id, run_id, metric_definition_version_id,
-                verified, conclusion, evidence_snapshot_ids, assumptions, uncertainties
+                verified, conclusion, evidence_snapshot_ids, assumptions, uncertainties, knowledge_citations
             )
             select #{findingId}, run.workspace_id, run.analysis_task_id, run.run_id,
                    run.metric_definition_version_id, #{verified}, #{conclusion},
-                   #{evidenceSnapshotIdsJson}, #{assumptionsJson}, #{uncertaintiesJson}
+                   #{evidenceSnapshotIdsJson}, #{assumptionsJson}, #{uncertaintiesJson}, #{knowledgeCitationsJson}
             from agent_run run
             where run.run_id = #{runId}
               and run.intent_route = 'ANALYSIS'
@@ -39,6 +40,17 @@ public interface AnalysisFindingMapper {
                         and snapshot.workspace_id = run.workspace_id
                   )
               ) = 0
+              and (
+                  select count(*)
+                  from jsonb_array_elements(#{knowledgeCitationsJson}::jsonb) as cited(c)
+                  where not exists (
+                      select 1
+                      from knowledge_passage passage
+                      where passage.workspace_id = run.workspace_id
+                        and passage.knowledge_source_id = cited.c->>'knowledgeSourceId'
+                        and passage.passage_number = (cited.c->>'passageNumber')::int
+                  )
+              ) = 0
             on conflict (finding_id) do nothing
             """)
     int insert(
@@ -49,7 +61,8 @@ public interface AnalysisFindingMapper {
             @Param("conclusion") String conclusion,
             @Param("evidenceSnapshotIdsJson") String evidenceSnapshotIdsJson,
             @Param("assumptionsJson") String assumptionsJson,
-            @Param("uncertaintiesJson") String uncertaintiesJson);
+            @Param("uncertaintiesJson") String uncertaintiesJson,
+            @Param("knowledgeCitationsJson") String knowledgeCitationsJson);
 
     /** 读取会话内当前用户有权查看的已验证发现，含其任务所属会话标识。 */
     @Results(id = "analysisFinding", value = {
@@ -63,13 +76,14 @@ public interface AnalysisFindingMapper {
             @Result(column = "evidence_snapshot_ids", property = "evidenceSnapshotIdsJson"),
             @Result(column = "assumptions", property = "assumptionsJson"),
             @Result(column = "uncertainties", property = "uncertaintiesJson"),
+            @Result(column = "knowledge_citations", property = "knowledgeCitationsJson"),
             @Result(column = "created_at", property = "createdAt")
     })
     @Select("""
             select finding.finding_id, task.conversation_id, finding.analysis_task_id,
                    finding.run_id, finding.metric_definition_version_id, finding.verified,
                    finding.conclusion, finding.evidence_snapshot_ids, finding.assumptions,
-                   finding.uncertainties, finding.created_at
+                   finding.uncertainties, finding.knowledge_citations, finding.created_at
             from analysis_finding finding
             join analysis_task task on task.analysis_task_id = finding.analysis_task_id
             join workspace_membership membership on membership.workspace_id = finding.workspace_id

@@ -190,3 +190,40 @@ function requireData<T>(data: T | undefined, response: Response, operation: stri
   }
   return data;
 }
+
+export type KnowledgeSource = components["schemas"]["KnowledgeSource"];
+export type KnowledgeCitation = components["schemas"]["KnowledgeCitation"];
+
+/** 上传文本型知识来源（Markdown/纯文本/文本型 PDF）；multipart 用原生 fetch。 */
+export async function uploadKnowledgeSource(
+  token: string,
+  workspaceId: string,
+  file: File,
+): Promise<KnowledgeSource> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("title", file.name);
+  const response = await fetch(`${globalThis.location?.origin ?? "http://localhost"}/api/v1/knowledge-sources`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error("无法上传知识来源");
+  }
+  return await response.json() as KnowledgeSource;
+}
+
+/** 读取当前工作区的知识来源列表。 */
+export async function loadKnowledgeSources(
+  token: string,
+  workspaceId: string,
+): Promise<KnowledgeSource[]> {
+  const { data, error: fetchError, response } = await client().GET("/api/v1/knowledge-sources", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+  });
+  if (fetchError || response.status >= 400) {
+    throw new Error("无法加载知识来源");
+  }
+  return data;
+}

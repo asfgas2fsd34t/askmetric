@@ -18,5 +18,6 @@ public class AnalysisFinding {
     private List<String> evidenceSnapshotIds;
     private List<String> assumptions;
     private List<String> uncertainties;
+    private List<KnowledgeCitation> knowledgeCitations = List.of();
     private java.time.Instant createdAt;
 }

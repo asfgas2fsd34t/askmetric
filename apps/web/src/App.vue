@@ -5,6 +5,7 @@ import {
   CircleDashed,
   Database,
   FileSearch,
+  FolderOpen,
   ListChecks,
   LogOut,
   Maximize2,
@@ -33,11 +34,14 @@ import {
   createMessage,
   loadConversation,
   loadConversations,
+  loadKnowledgeSources,
+  uploadKnowledgeSource,
   watchAgentRun,
   type AgentRunEvent,
   type ConversationSnapshot,
   type ConversationSummary,
   type EvidenceSnapshot,
+  type KnowledgeSource,
 } from "./conversation";
 import { loadWorkspaceSession, type WorkspaceSession } from "./session";
 import { applyTheme, initialTheme, toggleTheme, type ThemePreference } from "./theme";
@@ -56,6 +60,9 @@ const theme = ref<ThemePreference>("light");
 const inspectorOpen = ref(false);
 const panelResizing = ref(false);
 const evidenceDetail = ref<EvidenceSnapshot>();
+const knowledgeSources = ref<KnowledgeSource[]>([]);
+const knowledgeUploading = ref(false);
+const knowledgeError = ref("");
 const runSubscriptions = new Map<string, () => void>();
 const activeAgentRuns = computed(() => activeConversation.value?.agentRuns.filter((run) => !runIsTerminal(run)) ?? []);
 const activeAgentRun = computed(() => activeAgentRuns.value.at(-1));
@@ -200,10 +207,38 @@ async function refresh(requestedWorkspaceId?: string) {
   try {
     session.value = await loadWorkspaceSession(await accessToken(), requestedWorkspaceId);
     await refreshConversations(session.value.currentMembership.workspaceId);
+    void refreshKnowledge(session.value.currentMembership.workspaceId);
   } catch {
     error.value = "无法加载工作区";
   } finally {
     loading.value = false;
+  }
+}
+
+async function refreshKnowledge(workspaceId: string) {
+  if (!session.value) return;
+  try {
+    knowledgeSources.value = await loadKnowledgeSources(await accessToken(), workspaceId);
+    knowledgeError.value = "";
+  } catch {
+    knowledgeError.value = "无法加载知识来源";
+  }
+}
+
+async function onKnowledgeFileChosen(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !session.value || knowledgeUploading.value) return;
+  knowledgeUploading.value = true;
+  knowledgeError.value = "";
+  try {
+    await uploadKnowledgeSource(await accessToken(), session.value.currentMembership.workspaceId, file);
+    await refreshKnowledge(session.value.currentMembership.workspaceId);
+  } catch {
+    knowledgeError.value = "无法上传知识来源";
+  } finally {
+    knowledgeUploading.value = false;
   }
 }
 
@@ -661,6 +696,15 @@ function closeInspectorOnEscape(event: KeyboardEvent) {
               <Database :size="13" aria-hidden="true" />
               <span>证据 × {{ finding.evidenceSnapshotIds.length }}</span>
             </div>
+            <details v-if="finding.knowledgeCitations?.length" class="finding-details">
+              <summary>知识引用（{{ finding.knowledgeCitations.length }}）</summary>
+              <ul>
+                <li v-for="(citation, index) in finding.knowledgeCitations" :key="index">
+                  <small class="citation-source">{{ citation.knowledgeSourceId }} · 第 {{ citation.passageNumber }} 段</small>
+                  <blockquote class="citation-quote">{{ citation.quote }}</blockquote>
+                </li>
+              </ul>
+            </details>
             <details v-if="finding.assumptions.length > 0" class="finding-details">
               <summary>假设（{{ finding.assumptions.length }}）</summary>
               <ul>
@@ -674,6 +718,37 @@ function closeInspectorOnEscape(event: KeyboardEvent) {
               </ul>
             </details>
           </article>
+        </section>
+
+        <section class="context-section" aria-labelledby="knowledge-heading">
+          <h3 id="knowledge-heading">知识来源</h3>
+          <div class="knowledge-actions">
+            <label class="knowledge-upload" :class="{ busy: knowledgeUploading }">
+              <FolderOpen :size="14" aria-hidden="true" />
+              <span>{{ knowledgeUploading ? "摄取中…" : "上传知识" }}</span>
+              <input
+                type="file"
+                accept=".md,.txt,.pdf,text/plain,text/markdown,application/pdf"
+                :disabled="knowledgeUploading"
+                @change="onKnowledgeFileChosen"
+              />
+            </label>
+          </div>
+          <div v-if="knowledgeError" class="knowledge-error" role="alert">{{ knowledgeError }}</div>
+          <div v-if="knowledgeSources.length === 0" class="context-empty">
+            暂无知识来源。上传 Markdown、纯文本或文本型 PDF 后，分析可以引用其段落。
+          </div>
+          <ul v-else class="knowledge-list">
+            <li v-for="source in knowledgeSources" :key="source.knowledgeSourceId" class="knowledge-item">
+              <div class="knowledge-item-main">
+                <strong>{{ source.title }}</strong>
+                <small>{{ source.passageCount }} 段 · {{ source.contentType }}</small>
+              </div>
+              <span class="task-badge" :class="`knowledge-${source.status.toLowerCase()}`">
+                {{ source.status === "READY" ? "就绪" : source.status === "FAILED" ? "失败" : "已上传" }}
+              </span>
+            </li>
+          </ul>
         </section>
 
         <section class="context-section" aria-labelledby="evidence-heading">

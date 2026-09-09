@@ -206,6 +206,7 @@ class MrrDrilldownIntegrationTest {
                         true,
                         List.of("evidence_snapshot_of_another_run"),
                         List.of(),
+                        List.of(),
                         List.of()))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Analysis Finding was not accepted");
@@ -226,6 +227,7 @@ class MrrDrilldownIntegrationTest {
                         true,
                         List.of(evidenceSnapshotId),
                         List.of("月末 MRR 由订阅事件累计重建"),
+                        List.of(),
                         List.of())));
         agentRunService.acceptEvent(new AgentRunEvent(
                 "drilldown-completed-" + runId,

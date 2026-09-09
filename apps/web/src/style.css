@@ -1215,3 +1215,126 @@ textarea {
     font-size: 23px;
   }
 }
+
+/* —— 知识来源 —— */
+
+.knowledge-actions {
+  display: flex;
+}
+
+.knowledge-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.knowledge-upload:hover,
+.knowledge-upload.busy {
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
+
+.knowledge-upload.busy {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.knowledge-upload input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.knowledge-error {
+  margin-top: 8px;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.knowledge-list {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.knowledge-item-main {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.knowledge-item-main strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.knowledge-item-main small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.knowledge-ready {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.knowledge-failed {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.knowledge-uploaded,
+.knowledge-ingesting {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+/* —— 发现的知识引用 —— */
+
+.citation-source {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono-font);
+  font-size: 10px;
+}
+
+.citation-quote {
+  margin: 4px 0 6px;
+  padding: 6px 10px;
+  color: var(--text-soft);
+  background: var(--surface-preview);
+  border-left: 2px solid var(--line-strong);
+  font-size: 11px;
+  line-height: 1.6;
+}

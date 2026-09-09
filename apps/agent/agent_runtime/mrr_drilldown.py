@@ -22,6 +22,9 @@ JUNE_EVENTS_SQL = (
 
 DRILLDOWN_QUERIES = (BASELINE_SQL, JUNE_EVENTS_SQL)
 
+# 参考场景的知识检索词；命中的段落只作为发现引用，不影响验证结论。
+KNOWLEDGE_QUERY = "MRR 下降 流失"
+
 # 下降分析关注的月末窗口；与演示数据集 mrr-drop-v1 的固定时间边界一致。
 BASELINE_MONTH = "2025-05-01"
 CURRENT_MONTH = "2025-06-01"
@@ -72,6 +75,7 @@ def derive_finding(
         "evidenceSnapshotIds": evidence_snapshot_ids,
         "assumptions": assumptions,
         "uncertainties": [],
+        "knowledgeCitations": [],
     }
     previous = _month_value(baseline_rows, BASELINE_MONTH)
     current = _month_value(baseline_rows, CURRENT_MONTH)
