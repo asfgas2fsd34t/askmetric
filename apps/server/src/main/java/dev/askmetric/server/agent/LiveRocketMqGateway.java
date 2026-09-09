@@ -19,12 +19,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * RocketMQ 5 的生产适配器：发布 Java 创建的 Agent Run 请求，并消费 Python 返回的运行事件。
  */
 @Component
 @ConditionalOnProperty(name = "askmetric.rocketmq.enabled", havingValue = "true")
 public class LiveRocketMqGateway implements RocketMqGateway {
+    private static final Logger LOG = LoggerFactory.getLogger(LiveRocketMqGateway.class);
+
     private final ObjectMapper objectMapper;
     private final AgentRunContractValidator contractValidator;
     private final ObjectProvider<AgentRunService> serviceProvider;
@@ -104,6 +109,8 @@ public class LiveRocketMqGateway implements RocketMqGateway {
             return ConsumeResult.SUCCESS;
         } catch (Exception exception) {
             // 未验证或未持久化的事件必须触发队列重投，不能确认消费后静默丢失。
+            LOG.warn("Agent Run 事件消费失败，交还 RocketMQ 重投: {}",
+                    exception.getMessage(), exception);
             return ConsumeResult.FAILURE;
         }
     }

@@ -25,6 +25,21 @@ public class AgentRunEvent {
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private AgentRunFinding finding;
 
+    /** 不携带 finding 载荷的事件构造入口（Java 侧审计事件与测试使用）。 */
+    public AgentRunEvent(
+            String eventId,
+            int schemaVersion,
+            AgentRunEventType eventType,
+            long sequence,
+            Instant occurredAt,
+            String conversationId,
+            String runId,
+            String message,
+            AgentRunEventSource source) {
+        this(eventId, schemaVersion, eventType, sequence, occurredAt,
+                conversationId, runId, message, source, null);
+    }
+
     @JsonCreator
     public AgentRunEvent(
             @JsonProperty("eventId") String eventId,
@@ -35,22 +50,8 @@ public class AgentRunEvent {
             @JsonProperty("conversationId") String conversationId,
             @JsonProperty("runId") String runId,
             @JsonProperty("message") String message,
-            @JsonProperty("source") AgentRunEventSource source) {
-        this(eventId, schemaVersion, eventType, sequence, occurredAt,
-                conversationId, runId, message, source, null);
-    }
-
-    public AgentRunEvent(
-            String eventId,
-            int schemaVersion,
-            AgentRunEventType eventType,
-            long sequence,
-            Instant occurredAt,
-            String conversationId,
-            String runId,
-            String message,
-            AgentRunEventSource source,
-            AgentRunFinding finding) {
+            @JsonProperty("source") AgentRunEventSource source,
+            @JsonProperty("finding") AgentRunFinding finding) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
             throw new IllegalArgumentException("schemaVersion must be 1");
