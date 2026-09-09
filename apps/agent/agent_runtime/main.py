@@ -3,6 +3,7 @@ import logging
 import os
 import signal
 import threading
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -151,6 +152,17 @@ def post_governed_query(base_url: str, query_grant: str, run_id: str, sql: str) 
         return json.loads(response.read().decode("utf-8"))
 
 
+def retrieve_knowledge(base_url: str, query_grant: str, run_id: str, query: str) -> list[dict]:
+    """用同一查询授权检索工作区知识段落；检索结果只作为引用数据，不影响任何决策。"""
+    url = (
+        base_url + "/api/v1/agent-run-knowledge?runId=" + urllib.parse.quote(run_id)
+        + "&q=" + urllib.parse.quote(query)
+    )
+    outgoing = urllib.request.Request(url, headers={"X-Query-Grant": query_grant}, method="GET")
+    with urllib.request.urlopen(outgoing, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def execute_drilldown(request: dict) -> dict:
     """执行受治理下钻：检索证据、推导已验证发现；缺少授权视为运行失败。"""
     query_grant = request.get("queryGrant")
@@ -159,16 +171,32 @@ def execute_drilldown(request: dict) -> dict:
     metric_version = request.get("metricDefinitionVersionId")
     if not metric_version:
         raise RuntimeError("缺少已确认的指标定义版本，无法执行受治理下钻")
+    from agent_runtime.mrr_drilldown import DRILLDOWN_QUERIES, KNOWLEDGE_QUERY, derive_finding
+
     results = [
         post_governed_query(server_base_url(), query_grant, request["runId"], sql)
         for sql in DRILLDOWN_QUERIES
     ]
-    return derive_finding(
+    finding = derive_finding(
         results[0].get("rows") or [],
         results[1].get("rows") or [],
         metric_version,
         [result["evidenceSnapshotId"] for result in results if result.get("evidenceSnapshotId")],
     )
+    # 知识引用是佐证性输入：检索失败只降级为无引用，不影响证据验证结论。
+    try:
+        items = retrieve_knowledge(server_base_url(), query_grant, request["runId"], KNOWLEDGE_QUERY)
+        finding["knowledgeCitations"] = [
+            {
+                "knowledgeSourceId": item["knowledgeSourceId"],
+                "passageNumber": int(item["passageNumber"]),
+                "quote": item["quote"],
+            }
+            for item in items
+        ]
+    except Exception:
+        LOG.warning("知识段落检索失败，发现将以无引用继续", exc_info=True)
+    return finding
 
 
 # MRR 参考场景的固定下钻步骤；口径已由 Java 确认后才进入该计划。

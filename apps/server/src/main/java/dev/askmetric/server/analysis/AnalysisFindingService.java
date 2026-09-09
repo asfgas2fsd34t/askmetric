@@ -18,7 +18,7 @@ public class AnalysisFindingService {
         this.objectMapper = objectMapper;
     }
 
-    /** 持久化一条发现；治理校验在 insert 的 SQL 守卫中完成。 */
+    /** 持久化一条发现；治理校验（运行、口径、证据与知识引用归属）在 insert 的 SQL 守卫中完成。 */
     @Transactional
     public int persist(
             String findingId,
@@ -28,7 +28,8 @@ public class AnalysisFindingService {
             String conclusion,
             List<String> evidenceSnapshotIds,
             List<String> assumptions,
-            List<String> uncertainties) {
+            List<String> uncertainties,
+            List<KnowledgeCitation> knowledgeCitations) {
         return mapper.insert(
                 findingId,
                 runId,
@@ -37,7 +38,8 @@ public class AnalysisFindingService {
                 conclusion,
                 writeJson(evidenceSnapshotIds),
                 writeJson(assumptions),
-                writeJson(uncertainties));
+                writeJson(uncertainties),
+                writeJson(knowledgeCitations == null ? List.of() : knowledgeCitations));
     }
 
     /** 读取会话内当前用户有权查看的已验证发现。 */
@@ -60,13 +62,24 @@ public class AnalysisFindingService {
         finding.setEvidenceSnapshotIds(readJson(record.getEvidenceSnapshotIdsJson()));
         finding.setAssumptions(readJson(record.getAssumptionsJson()));
         finding.setUncertainties(readJson(record.getUncertaintiesJson()));
+        finding.setKnowledgeCitations(readCitations(record.getKnowledgeCitationsJson()));
         finding.setCreatedAt(record.getCreatedAt());
         return finding;
     }
 
-    private String writeJson(List<String> values) {
+    private List<KnowledgeCitation> readCitations(String json) {
         try {
-            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+            return objectMapper.readValue(
+                    json == null ? "[]" : json,
+                    new TypeReference<List<KnowledgeCitation>>() {});
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("无法解析 Analysis Finding 字段", exception);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? List.of() : value);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法序列化 Analysis Finding 字段", exception);
         }

@@ -29,6 +29,10 @@ spring:
           issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8082/realms/askmetric}
           jwk-set-uri: ${OIDC_JWK_SET_URI:http://localhost:8082/realms/askmetric/protocol/openid-connect/certs}
 
+spring.servlet.multipart:
+  max-file-size: 5MB
+  max-request-size: 6MB
+
 askmetric:
   agent-query:
     secret: ${AGENT_QUERY_SECRET:askmetric-dev-agent-query-secret}

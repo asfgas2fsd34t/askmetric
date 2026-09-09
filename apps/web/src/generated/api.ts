@@ -58,6 +58,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List knowledge sources in the current Workspace */
+        get: operations["listKnowledgeSources"];
+        put?: never;
+        /** Upload a text-based knowledge source and ingest it */
+        post: operations["uploadKnowledgeSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-run-knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve knowledge passages for an Agent Run using a Java-minted query grant
+         * @description Python Agent Runtime entry; results contain citation data only and never influence policies or tools.
+         */
+        get: operations["retrieveKnowledgeForAgentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -199,8 +237,38 @@ export interface components {
             evidenceSnapshotIds: string[];
             assumptions: string[];
             uncertainties: string[];
+            knowledgeCitations?: components["schemas"]["KnowledgeCitation"][];
             /** Format: date-time */
             createdAt: string;
+        };
+        KnowledgeSource: {
+            knowledgeSourceId: string;
+            workspaceId: string;
+            title: string;
+            filename: string;
+            /** @enum {string} */
+            contentType: "text/plain" | "text/markdown" | "application/pdf";
+            /** Format: int64 */
+            byteSize: number;
+            /** @enum {string} */
+            status: "UPLOADED" | "READY" | "FAILED";
+            failureReason?: string | null;
+            passageCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            ingestedAt?: string | null;
+        };
+        KnowledgeCitation: {
+            knowledgeSourceId: string;
+            passageNumber: number;
+            quote: string;
+        };
+        KnowledgeRetrievalItem: {
+            knowledgeSourceId: string;
+            title: string;
+            passageNumber: number;
+            quote: string;
         };
         ConversationMessage: {
             messageId: string;
@@ -459,6 +527,121 @@ export interface operations {
                 content?: never;
             };
             /** @description Agent Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listKnowledgeSources: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 来源列表（不含全文） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSource"][];
+                };
+            };
+        };
+    };
+    uploadKnowledgeSource: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description 文本型 PDF、Markdown 或纯文本文件，最大 5MB。
+                     */
+                    file: string;
+                    title?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 摄取完成（失败时状态为 FAILED） */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSource"];
+                };
+            };
+            /** @description 参数或类型不支持 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 上传内容超出大小限制 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    retrieveKnowledgeForAgentRun: {
+        parameters: {
+            query: {
+                runId: string;
+                q: string;
+            };
+            header: {
+                "X-Query-Grant": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 检索到的知识段落（最多 3 条） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeRetrievalItem"][];
+                };
+            };
+            /** @description 缺少参数 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 查询授权无效或过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Agent Run 不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

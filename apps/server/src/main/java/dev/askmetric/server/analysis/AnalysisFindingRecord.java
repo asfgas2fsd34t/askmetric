@@ -15,5 +15,6 @@ public class AnalysisFindingRecord {
     private String evidenceSnapshotIdsJson;
     private String assumptionsJson;
     private String uncertaintiesJson;
+    private String knowledgeCitationsJson;
     private java.time.Instant createdAt;
 }
