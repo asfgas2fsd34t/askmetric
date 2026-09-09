@@ -7,6 +7,11 @@ export type ConversationSnapshot = components["schemas"]["ConversationSnapshot"]
 export type ConversationMessage = components["schemas"]["ConversationMessage"];
 export type MessageProcessed = components["schemas"]["MessageProcessed"];
 export type AgentRunEvent = components["schemas"]["AgentRunEvent"];
+export type AgentRun = components["schemas"]["AgentRun"];
+export type AgentRunAuditEvent = components["schemas"]["AgentRunAuditEvent"];
+export type AnalysisTask = components["schemas"]["AnalysisTask"];
+export type AnalysisFinding = components["schemas"]["AnalysisFinding"];
+export type EvidenceSnapshot = components["schemas"]["EvidenceSnapshot"];
 
 function client() {
   return createClient<paths>({ baseUrl: globalThis.location?.origin ?? "http://localhost" });

@@ -4,13 +4,20 @@
 
 ## Agent 事件链路
 
-### AGENT-003 真实链路中 finding 事件未落地
+### AGENT-004 阶段信息依赖事件消息前缀
 
-- **现状**：T18 在 compose 全链路验证中，下钻运行的受治理查询、查询授权、Evidence Snapshot 落库和前端证据面板展示均正常，但运行停在 `PROGRESS`（阶段 retrieving），`agent.run.finding` 与终态事件始终未持久化；集成测试（在 service 边界注入事件）与 Python 单测（fake 网关）均通过。
-- **问题**：疑似 Python 发出的 finding 事件被 Java 侧拒绝后进入 RocketMQ 无限重投，或 Python 在查询成功后的推导/发布环节挂起；尚未定位到具体环节。
-- **为什么暂缓**：不影响 T18 已验证的查询治理与证据链路；下钻结论在真实链路的最后一步缺失，确定性测试覆盖了等价路径。
-- **建议方案**：给 `LiveRocketMqGateway.consumeEvent` 的拒绝路径加结构化日志；在 compose 环境重放一次下钻并对比 Python producer 与 Java consumer 日志；必要时为 finding 事件补一条端到端 smoke。
-- **验收标准**：compose 全链路下钻运行能到达终态，快照包含 verified 发现；重投不再无限循环。
+- **现状**：T19 前端用 `event.message.startsWith("阶段 retrieving")` 识别 retrieving 阶段（apps/web/src/analysis-context.ts 的 `RETRIEVING_MESSAGE_PREFIX`）；该前缀由 Python（main.py）与 Java（ConversationService）的确定性消息产生，属于三处共享的隐式文本契约。
+- **问题**：措辞调整会静默导致前端阶段停留在 planning；spec 要求运行进度由版本化事件表达，阶段应走结构化字段而不是消息文本。
+- **建议方案**：事件契约 v1 增加可选 `stage` 字段（或引入 agent.run.stage 事件类型），Java/Python 发阶段事件时携带，前端解析字段而非前缀。
+- **验收标准**：前端阶段推导只依赖结构化字段；消息措辞调整不改变阶段展示。
+
+### AGENT-005 Vue A 方案组件级冒烟测试缺口
+
+- **现状**：spec 要求"Vue A 方案 Smoke Test 验证三栏布局、消息流、任务阶段、证据、停止、重置、主题与 SSE 状态一致"；T19 交付的是纯函数单测（阶段推导/主题/格式化）+ 既有 e2e（需完整本地栈），尚无挂载 App.vue 的组件级冒烟测试。
+- **问题**：组件模板与样式回归（三栏结构、按钮可见性、SSE 合并后的渲染）没有自动化覆盖。
+- **为什么暂缓**：引入组件测试需要新增 @vue/test-utils 依赖与 DOM 环境；e2e 已覆盖登录、停止与终态快照的关键路径。
+- **建议方案**：引入 @vue/test-utils + happy-dom，补一条挂载 App.vue 的冒烟测试（三栏存在、消息渲染、阶段列表随事件更新、主题切换与检查器开关）。
+- **验收标准**：组件冒烟测试在 CI 与本地稳定通过，覆盖 spec 列举的最小集合。
 
 ## 并发与 SSE
 
