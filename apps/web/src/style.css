@@ -1338,3 +1338,111 @@ textarea {
   font-size: 11px;
   line-height: 1.6;
 }
+
+/* —— 用户记忆与对话摘要 —— */
+
+.memory-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.memory-form input {
+  min-width: 0;
+  padding: 7px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.memory-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.memory-add {
+  padding: 0 12px;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.memory-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.memory-list {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.memory-item-main {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.memory-item-main p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.memory-item-main small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.memory-action {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.memory-action:hover {
+  color: var(--text-strong);
+  background: var(--surface-chip);
+}
+
+.summary-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.summary-text {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: var(--text-soft);
+  background: var(--surface-preview);
+  border-radius: 4px;
+  font-family: var(--mono-font);
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}

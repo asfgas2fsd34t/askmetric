@@ -51,6 +51,7 @@ public class ConversationService {
     private final MetricDefinitionService metricDefinitionService;
     private final EvidenceSnapshotService evidenceSnapshotService;
     private final AnalysisFindingService analysisFindingService;
+    private final ConversationSummaryMapper conversationSummaryMapper;
     private final AgentQueryGrantService queryGrantService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
@@ -66,6 +67,7 @@ public class ConversationService {
             MetricDefinitionService metricDefinitionService,
             EvidenceSnapshotService evidenceSnapshotService,
             AnalysisFindingService analysisFindingService,
+            ConversationSummaryMapper conversationSummaryMapper,
             AgentQueryGrantService queryGrantService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
@@ -79,13 +81,14 @@ public class ConversationService {
         this.metricDefinitionService = metricDefinitionService;
         this.evidenceSnapshotService = evidenceSnapshotService;
         this.analysisFindingService = analysisFindingService;
+        this.conversationSummaryMapper = conversationSummaryMapper;
         this.queryGrantService = queryGrantService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationSummary> list(String userSubject, String workspaceId) {
+    public List<ConversationListItem> list(String userSubject, String workspaceId) {
         return mapper.list(userSubject, workspaceId);
     }
 
@@ -95,6 +98,61 @@ public class ConversationService {
         String conversationId = "conversation_" + UUID.randomUUID();
         return mapper.create(userSubject, workspaceId, conversationId, title)
                 .orElseThrow(() -> new AccessDeniedException("Workspace Membership not found"));
+    }
+
+    /** 为明确的消息范围创建版本化摘要；摘要是派生输入，不替代原始 Message。 */
+    @Transactional
+    public ConversationSummary createSummary(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            ConversationController.CreateSummaryRequest request) {
+        Long fromSequence = request == null ? null : request.getFromSequence();
+        Long toSequence = request == null ? null : request.getToSequence();
+        if (fromSequence == null || toSequence == null || fromSequence < 1 || toSequence < fromSequence) {
+            throw new IllegalArgumentException("fromSequence/toSequence must describe a non-empty message range");
+        }
+        List<ConversationMessage> covered = mapper.messages(userSubject, workspaceId, conversationId).stream()
+                .filter(message -> message.getSequence() >= fromSequence
+                        && message.getSequence() <= toSequence)
+                .toList();
+        if (covered.isEmpty()) {
+            throw new IllegalArgumentException("message range covers no messages in this conversation");
+        }
+        String summaryText = buildSummaryText(covered);
+        String conversationSummaryId = "conversation_summary_" + UUID.randomUUID();
+        if (conversationSummaryMapper.insert(
+                userSubject, workspaceId, conversationId, conversationSummaryId,
+                fromSequence, toSequence, summaryText, null) != 1) {
+            throw new AccessDeniedException("Conversation not found in Workspace");
+        }
+        return conversationSummaryMapper.list(userSubject, workspaceId, conversationId).stream()
+                .filter(summary -> conversationSummaryId.equals(summary.getConversationSummaryId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Conversation Summary was not persisted"));
+    }
+
+    /** 确定性摘要：每条消息截取前 80 字符，总量连同截断标记封顶 4000。 */
+    static String buildSummaryText(List<ConversationMessage> covered) {
+        final int maxSummaryLength = 4000;
+        final String truncationMarker = "（超出摘要边界，已截断）";
+        final int lineBudget = maxSummaryLength - truncationMarker.length();
+        StringBuilder builder = new StringBuilder();
+        for (ConversationMessage message : covered) {
+            String clipped = message.getContent().length() <= 80
+                    ? message.getContent()
+                    : message.getContent().substring(0, 80) + "…";
+            String line = message.getSequence() + " " + message.getAuthor() + ": " + clipped;
+            if (builder.length() + line.length() + 1 > lineBudget) {
+                builder.append(truncationMarker);
+                break;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(line);
+        }
+        return builder.toString();
     }
 
     @Transactional(readOnly = true)
@@ -109,6 +167,8 @@ public class ConversationService {
         snapshot.setAnalysisTasks(analysisTaskMapper.tasks(userSubject, workspaceId, conversationId));
         snapshot.setEvidenceSnapshots(evidenceSnapshotService.list(userSubject, workspaceId, conversationId));
         snapshot.setAnalysisFindings(analysisFindingService.list(userSubject, workspaceId, conversationId));
+        snapshot.setConversationSummaries(
+                conversationSummaryMapper.list(userSubject, workspaceId, conversationId));
         return snapshot;
     }
 

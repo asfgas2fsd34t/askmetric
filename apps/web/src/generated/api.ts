@@ -58,6 +58,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversationId}/summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a versioned summary over an explicit message range */
+        post: operations["createConversationSummary"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the owner's memories including pending ones */
+        get: operations["listUserMemories"];
+        put?: never;
+        /** Register a pending user memory awaiting owner confirmation */
+        post: operations["proposeUserMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-memories/{userMemoryId}/confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a proposed memory as its owner */
+        post: operations["confirmUserMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-memories/{userMemoryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a memory as its owner */
+        delete: operations["deleteUserMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-run-memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read confirmed memories for an Agent Run using a query grant
+         * @description Only CONFIRMED memories of the run author in the run's workspace are returned.
+         */
+        get: operations["listUserMemoriesForAgentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/knowledge-sources": {
         parameters: {
             query?: never;
@@ -203,6 +292,34 @@ export interface components {
             workspaceName: string;
         };
         ConversationSummary: {
+            conversationSummaryId: string;
+            workspaceId?: string;
+            conversationId: string;
+            version: number;
+            /** Format: int64 */
+            fromSequence: number;
+            /** Format: int64 */
+            toSequence: number;
+            summaryText: string;
+            sourceAgentRunId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        UserMemory: {
+            userMemoryId: string;
+            workspaceId: string;
+            userSubject: string;
+            content: string;
+            /** @enum {string} */
+            status: "PROPOSED" | "CONFIRMED";
+            sourceConversationId?: string | null;
+            sourceAgentRunId?: string | null;
+            /** Format: date-time */
+            confirmedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ConversationListItem: {
             conversationId: string;
             title: string;
             /** Format: int64 */
@@ -225,6 +342,7 @@ export interface components {
             analysisTasks: components["schemas"]["AnalysisTask"][];
             evidenceSnapshots: components["schemas"]["EvidenceSnapshot"][];
             analysisFindings: components["schemas"]["AnalysisFinding"][];
+            conversationSummaries: components["schemas"]["ConversationSummary"][];
         };
         AnalysisFinding: {
             findingId: string;
@@ -535,6 +653,201 @@ export interface operations {
             };
         };
     };
+    createConversationSummary: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    fromSequence: number;
+                    /** Format: int64 */
+                    toSequence: number;
+                };
+            };
+        };
+        responses: {
+            /** @description 摘要创建成功；原始 Message 不受影响 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description 范围无效或没有覆盖任何消息 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listUserMemories: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 记忆列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMemory"][];
+                };
+            };
+        };
+    };
+    proposeUserMemory: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 待确认记忆已登记 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMemory"];
+                };
+            };
+            /** @description 内容无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    confirmUserMemory: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                userMemoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已确认，此后对 Agent 可见 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMemory"];
+                };
+            };
+            /** @description 不是待确认状态或不存在 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteUserMemory: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                userMemoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除，不再被使用 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 不存在 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listUserMemoriesForAgentRun: {
+        parameters: {
+            query: {
+                runId: string;
+            };
+            header: {
+                "X-Query-Grant": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已确认记忆列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMemory"][];
+                };
+            };
+            /** @description 查询授权无效或过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Agent Run 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listKnowledgeSources: {
         parameters: {
             query?: never;
@@ -667,7 +980,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationSummary"][];
+                    "application/json": components["schemas"]["ConversationListItem"][];
                 };
             };
             /** @description The Workspace is not available to the current user */

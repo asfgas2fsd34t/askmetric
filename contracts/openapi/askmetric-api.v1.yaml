@@ -84,6 +84,158 @@ paths:
           description: Query grant is invalid or expired
         "404":
           description: Agent Run not found
+  /api/v1/conversations/{conversationId}/summaries:
+    post:
+      operationId: createConversationSummary
+      summary: Create a versioned summary over an explicit message range
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromSequence, toSequence]
+              properties:
+                fromSequence:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                toSequence:
+                  type: integer
+                  format: int64
+                  minimum: 1
+      responses:
+        "201":
+          description: 摘要创建成功；原始 Message 不受影响
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationSummary"
+        "400":
+          description: 范围无效或没有覆盖任何消息
+  /api/v1/user-memories:
+    post:
+      operationId: proposeUserMemory
+      summary: Register a pending user memory awaiting owner confirmation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+      responses:
+        "201":
+          description: 待确认记忆已登记
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMemory"
+        "400":
+          description: 内容无效
+    get:
+      operationId: listUserMemories
+      summary: List the owner's memories including pending ones
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 记忆列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserMemory"
+  /api/v1/user-memories/{userMemoryId}/confirmation:
+    post:
+      operationId: confirmUserMemory
+      summary: Confirm a proposed memory as its owner
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userMemoryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 已确认，此后对 Agent 可见
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMemory"
+        "400":
+          description: 不是待确认状态或不存在
+  /api/v1/user-memories/{userMemoryId}:
+    delete:
+      operationId: deleteUserMemory
+      summary: Delete a memory as its owner
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userMemoryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "204":
+          description: 已删除，不再被使用
+        "400":
+          description: 不存在
+  /api/v1/agent-run-memories:
+    get:
+      operationId: listUserMemoriesForAgentRun
+      summary: Read confirmed memories for an Agent Run using a query grant
+      description: Only CONFIRMED memories of the run author in the run's workspace are returned.
+      parameters:
+        - name: X-Query-Grant
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 已确认记忆列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserMemory"
+        "401":
+          description: 查询授权无效或过期
+        "404":
+          description: Agent Run 不存在
   /api/v1/knowledge-sources:
     post:
       operationId: uploadKnowledgeSource
@@ -186,7 +338,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/ConversationSummary"
+                  $ref: "#/components/schemas/ConversationListItem"
         "403":
           description: The Workspace is not available to the current user
     post:
@@ -395,6 +547,59 @@ components:
           type: string
     ConversationSummary:
       type: object
+      required: [conversationSummaryId, conversationId, version, fromSequence, toSequence, summaryText, createdAt]
+      properties:
+        conversationSummaryId:
+          type: string
+        workspaceId:
+          type: string
+        conversationId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        fromSequence:
+          type: integer
+          format: int64
+          minimum: 1
+        toSequence:
+          type: integer
+          format: int64
+          minimum: 1
+        summaryText:
+          type: string
+        sourceAgentRunId:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+    UserMemory:
+      type: object
+      required: [userMemoryId, workspaceId, userSubject, content, status, createdAt]
+      properties:
+        userMemoryId:
+          type: string
+        workspaceId:
+          type: string
+        userSubject:
+          type: string
+        content:
+          type: string
+        status:
+          type: string
+          enum: [PROPOSED, CONFIRMED]
+        sourceConversationId:
+          type: [string, "null"]
+        sourceAgentRunId:
+          type: [string, "null"]
+        confirmedAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ConversationListItem:
+      type: object
       required: [conversationId, title, messageCount, createdAt, updatedAt]
       properties:
         conversationId:
@@ -412,7 +617,7 @@ components:
           format: date-time
     ConversationSnapshot:
       type: object
-      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks, evidenceSnapshots, analysisFindings]
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks, evidenceSnapshots, analysisFindings, conversationSummaries]
       properties:
         conversationId:
           type: string
@@ -446,6 +651,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnalysisFinding"
+        conversationSummaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationSummary"
     AnalysisFinding:
       type: object
       required: [findingId, conversationId, analysisTaskId, runId, metricDefinitionVersionId, verified, conclusion, evidenceSnapshotIds, assumptions, uncertainties, createdAt]

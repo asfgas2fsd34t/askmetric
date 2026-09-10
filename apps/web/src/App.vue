@@ -32,22 +32,28 @@ import {
   cancelAgentRun,
   createConversation,
   createMessage,
+  confirmUserMemory,
+  createConversationSummary,
+  deleteUserMemory,
   loadConversation,
   loadConversations,
   loadKnowledgeSources,
+  loadUserMemories,
+  proposeUserMemory,
   uploadKnowledgeSource,
   watchAgentRun,
   type AgentRunEvent,
   type ConversationSnapshot,
-  type ConversationSummary,
+  type ConversationListItem,
   type EvidenceSnapshot,
   type KnowledgeSource,
+  type UserMemory,
 } from "./conversation";
 import { loadWorkspaceSession, type WorkspaceSession } from "./session";
 import { applyTheme, initialTheme, toggleTheme, type ThemePreference } from "./theme";
 
 const session = ref<WorkspaceSession>();
-const conversations = ref<ConversationSummary[]>([]);
+const conversations = ref<ConversationListItem[]>([]);
 const activeConversation = ref<ConversationSnapshot>();
 const loading = ref(true);
 const conversationLoading = ref(false);
@@ -63,6 +69,10 @@ const evidenceDetail = ref<EvidenceSnapshot>();
 const knowledgeSources = ref<KnowledgeSource[]>([]);
 const knowledgeUploading = ref(false);
 const knowledgeError = ref("");
+const userMemories = ref<UserMemory[]>([]);
+const memoryDraft = ref("");
+const memoryBusy = ref(false);
+const memoryError = ref("");
 const runSubscriptions = new Map<string, () => void>();
 const activeAgentRuns = computed(() => activeConversation.value?.agentRuns.filter((run) => !runIsTerminal(run)) ?? []);
 const activeAgentRun = computed(() => activeAgentRuns.value.at(-1));
@@ -208,6 +218,7 @@ async function refresh(requestedWorkspaceId?: string) {
     session.value = await loadWorkspaceSession(await accessToken(), requestedWorkspaceId);
     await refreshConversations(session.value.currentMembership.workspaceId);
     void refreshKnowledge(session.value.currentMembership.workspaceId);
+    void refreshMemories(session.value.currentMembership.workspaceId);
   } catch {
     error.value = "无法加载工作区";
   } finally {
@@ -222,6 +233,83 @@ async function refreshKnowledge(workspaceId: string) {
     knowledgeError.value = "";
   } catch {
     knowledgeError.value = "无法加载知识来源";
+  }
+}
+
+async function refreshMemories(workspaceId: string) {
+  if (!session.value) return;
+  try {
+    userMemories.value = await loadUserMemories(await accessToken(), workspaceId);
+    memoryError.value = "";
+  } catch {
+    memoryError.value = "无法加载记忆";
+  }
+}
+
+async function submitMemory() {
+  const content = memoryDraft.value.trim();
+  if (!session.value || !content || memoryBusy.value) return;
+  memoryBusy.value = true;
+  memoryError.value = "";
+  try {
+    await proposeUserMemory(await accessToken(), session.value.currentMembership.workspaceId, content);
+    memoryDraft.value = "";
+    await refreshMemories(session.value.currentMembership.workspaceId);
+  } catch {
+    memoryError.value = "无法登记记忆";
+  } finally {
+    memoryBusy.value = false;
+  }
+}
+
+async function confirmMemory(userMemoryId: string) {
+  if (!session.value || memoryBusy.value) return;
+  memoryBusy.value = true;
+  try {
+    await confirmUserMemory(
+      await accessToken(), session.value.currentMembership.workspaceId, userMemoryId);
+    await refreshMemories(session.value.currentMembership.workspaceId);
+  } catch {
+    memoryError.value = "无法确认记忆";
+  } finally {
+    memoryBusy.value = false;
+  }
+}
+
+async function removeMemory(userMemoryId: string) {
+  if (!session.value || memoryBusy.value) return;
+  memoryBusy.value = true;
+  try {
+    await deleteUserMemory(
+      await accessToken(), session.value.currentMembership.workspaceId, userMemoryId);
+    await refreshMemories(session.value.currentMembership.workspaceId);
+  } catch {
+    memoryError.value = "无法删除记忆";
+  } finally {
+    memoryBusy.value = false;
+  }
+}
+
+async function summarizeConversation() {
+  if (!session.value || !activeConversation.value || memoryBusy.value) return;
+  const messages = activeConversation.value.messages;
+  if (messages.length === 0) return;
+  memoryBusy.value = true;
+  memoryError.value = "";
+  try {
+    await createConversationSummary(
+      await accessToken(),
+      session.value.currentMembership.workspaceId,
+      activeConversation.value.conversationId,
+      messages[0].sequence,
+      messages[messages.length - 1].sequence,
+    );
+    await refreshConversations(
+      session.value.currentMembership.workspaceId, activeConversation.value.conversationId);
+  } catch {
+    memoryError.value = "无法创建摘要";
+  } finally {
+    memoryBusy.value = false;
   }
 }
 
@@ -718,6 +806,82 @@ function closeInspectorOnEscape(event: KeyboardEvent) {
               </ul>
             </details>
           </article>
+        </section>
+
+        <section class="context-section" aria-labelledby="memory-heading">
+          <h3 id="memory-heading">用户记忆</h3>
+          <form class="memory-form" @submit.prevent="submitMemory">
+            <input
+              v-model="memoryDraft"
+              maxlength="500"
+              placeholder="输入偏好，确认后跨对话生效"
+              :disabled="memoryBusy"
+              aria-label="记忆内容"
+            />
+            <button
+              class="memory-add"
+              type="submit"
+              title="登记待确认记忆"
+              :disabled="memoryBusy || !memoryDraft.trim()"
+            >
+              登记
+            </button>
+          </form>
+          <div v-if="memoryError" class="knowledge-error" role="alert">{{ memoryError }}</div>
+          <div v-if="userMemories.length === 0" class="context-empty">
+            暂无记忆。登记后需你明确确认，未确认的记忆不会进入任何分析。
+          </div>
+          <ul v-else class="memory-list">
+            <li v-for="memory in userMemories" :key="memory.userMemoryId" class="memory-item">
+              <div class="memory-item-main">
+                <p>{{ memory.content }}</p>
+                <small>{{ memory.status === "CONFIRMED" ? "已确认 · 跨对话可用" : "待确认 · 分析不可见" }}</small>
+              </div>
+              <span class="task-badge" :class="memory.status === 'CONFIRMED' ? 'knowledge-ready' : 'knowledge-uploaded'">
+                {{ memory.status === "CONFIRMED" ? "已确认" : "待确认" }}
+              </span>
+              <button
+                v-if="memory.status === 'PROPOSED'"
+                class="icon-button memory-action"
+                type="button"
+                title="确认记忆"
+                aria-label="确认记忆"
+                :disabled="memoryBusy"
+                @click="confirmMemory(memory.userMemoryId)"
+              >
+                ✓
+              </button>
+              <button
+                class="icon-button memory-action"
+                type="button"
+                title="删除记忆"
+                aria-label="删除记忆"
+                :disabled="memoryBusy"
+                @click="removeMemory(memory.userMemoryId)"
+              >
+                ✕
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <section class="context-section" aria-labelledby="summary-heading">
+          <h3 id="summary-heading">对话摘要</h3>
+          <button
+            class="knowledge-upload"
+            type="button"
+            :disabled="memoryBusy || !activeConversation?.messages?.length"
+            @click="summarizeConversation"
+          >
+            {{ memoryBusy ? "处理中…" : "生成当前对话摘要" }}
+          </button>
+          <div v-if="activeConversation?.conversationSummaries?.length" class="summary-list">
+            <details v-for="summary in activeConversation.conversationSummaries" :key="summary.conversationSummaryId" class="finding-details">
+              <summary>v{{ summary.version }} · 覆盖消息 {{ summary.fromSequence }}–{{ summary.toSequence }}</summary>
+              <pre class="summary-text">{{ summary.summaryText }}</pre>
+            </details>
+          </div>
+          <div v-else class="context-empty">暂无摘要。摘要记录范围与版本，不替代原始消息。</div>
         </section>
 
         <section class="context-section" aria-labelledby="knowledge-heading">
