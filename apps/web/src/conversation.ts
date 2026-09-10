@@ -2,7 +2,9 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/api";
 
+export type ConversationListItem = components["schemas"]["ConversationListItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
+export type UserMemory = components["schemas"]["UserMemory"];
 export type ConversationSnapshot = components["schemas"]["ConversationSnapshot"];
 export type ConversationMessage = components["schemas"]["ConversationMessage"];
 export type MessageProcessed = components["schemas"]["MessageProcessed"];
@@ -24,7 +26,7 @@ function headers(accessToken: string) {
 export async function loadConversations(
   accessToken: string,
   workspaceId: string,
-): Promise<ConversationSummary[]> {
+): Promise<ConversationListItem[]> {
   const { data, response } = await client().GET("/api/v1/conversations", {
     headers: headers(accessToken),
     params: { header: { "X-Workspace-Id": workspaceId } },
@@ -226,4 +228,90 @@ export async function loadKnowledgeSources(
     throw new Error("无法加载知识来源");
   }
   return data;
+}
+
+/** 为明确的消息范围创建版本化对话摘要。 */
+export async function createConversationSummary(
+  token: string,
+  workspaceId: string,
+  conversationId: string,
+  fromSequence: number,
+  toSequence: number,
+): Promise<ConversationSummary> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/conversations/{conversationId}/summaries",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { conversationId } },
+      body: { fromSequence, toSequence },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法创建对话摘要");
+  }
+  return data;
+}
+
+/** 登记一条待确认的用户记忆。 */
+export async function proposeUserMemory(
+  token: string,
+  workspaceId: string,
+  content: string,
+): Promise<UserMemory> {
+  const { data, error: fetchError, response } = await client().POST("/api/v1/user-memories", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+    body: { content },
+  });
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法登记记忆");
+  }
+  return data;
+}
+
+/** 所有者确认记忆。 */
+export async function confirmUserMemory(
+  token: string,
+  workspaceId: string,
+  userMemoryId: string,
+): Promise<UserMemory> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/user-memories/{userMemoryId}/confirmation",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { userMemoryId } },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法确认记忆");
+  }
+  return data;
+}
+
+/** 所有者查看自己的记忆（含待确认）。 */
+export async function loadUserMemories(
+  token: string,
+  workspaceId: string,
+): Promise<UserMemory[]> {
+  const { data, error: fetchError, response } = await client().GET("/api/v1/user-memories", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+  });
+  if (fetchError || response.status >= 400) {
+    throw new Error("无法加载记忆");
+  }
+  return data;
+}
+
+/** 所有者删除记忆。 */
+export async function deleteUserMemory(
+  token: string,
+  workspaceId: string,
+  userMemoryId: string,
+): Promise<void> {
+  const { error: fetchError, response } = await client().DELETE("/api/v1/user-memories/{userMemoryId}", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+    params: { path: { userMemoryId } },
+  });
+  if (fetchError || response.status >= 400) {
+    throw new Error("无法删除记忆");
+  }
 }

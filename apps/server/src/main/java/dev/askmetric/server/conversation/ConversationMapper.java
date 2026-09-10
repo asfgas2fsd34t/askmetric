@@ -30,7 +30,7 @@ interface ConversationMapper {
             group by conversation.conversation_id
             order by conversation.updated_at desc, conversation.conversation_id
             """)
-    List<ConversationSummary> list(String userSubject, String workspaceId);
+    List<ConversationListItem> list(String userSubject, String workspaceId);
 
     @Results(id = "conversationSnapshot", value = {
             @Result(column = "conversation_id", property = "conversationId"),

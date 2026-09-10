@@ -27,4 +27,6 @@ public class ConversationSnapshot {
     private List<EvidenceSnapshot> evidenceSnapshots = new ArrayList<>();
     /** Conversation 内已持久化的已验证发现。 */
     private List<AnalysisFinding> analysisFindings = new ArrayList<>();
+    /** Conversation 的版本化派生摘要；与原始 Message 并存，不替代。 */
+    private List<ConversationSummary> conversationSummaries = new ArrayList<>();
 }
