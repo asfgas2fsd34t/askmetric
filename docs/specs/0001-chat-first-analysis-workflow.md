@@ -84,7 +84,7 @@
 - 可审计分析使用结构化 Schema，包含结论、指标和时间定义、证据、表格、受限图表模型、引用、不确定性、假设、建议和可选 Action Proposal。模型不能直接提供任意 HTML、JavaScript 或图表脚本。
 - Java Report 模块从结构化分析和 Evidence Snapshot 确定性渲染独立、不可变 HTML。报告保存分析版本、指标版本、数据截至时间、来源、渲染版本和 supersedesReportId；查看和下载都产生 Audit Record。
 - Action Proposal 保存确切操作类型、参数、发起 Agent Run、Workspace Policy 版本和幂等键。Java Approval 模块校验当前成员权限和分离审批人规则；参数变化会使原提案和审批失效。
-- 只有 Java Tool Gateway 可以调用 Sandbox Work Tracker MCP。调用必须绑定已批准的确切提案和幂等键，并保存请求、响应、结果和 Audit Record。Python 只能提出操作，不能执行操作。
+- 副作用操作只能由 Java Tool Gateway 的受治理执行器执行。首版执行器是语义目录变更（ADR-0009）：把自定义口径升级为共享版本或修订标准口径，批准后写入 metric_definition_version 并对全工作区生效；外部 MCP（含 Sandbox Work Tracker）作为后续可选执行器接入同一执行器接口。调用必须绑定已批准的确切提案和幂等键，并保存请求、响应、结果和 Audit Record。Python 只能提出操作，不能执行操作。
 - 首版使用确定性的 B2B SaaS Demo Workspace、PostgreSQL Demo Warehouse 和 MRR 下降参考场景，确保没有模型凭据时仍能跑通测试。演示数据为合成数据，公开演示禁止外部连接和匿名报告分享。
 - 接入 OpenTelemetry 后，运行和查询的 Trace 使用 traceId 关联浏览器请求、Java、RocketMQ、Python、模型、Query Gateway、MCP 和 Report Renderer；Java 额外保存模型、Schema 版本、Token、成本、延迟和业务结果。该能力不属于 T01。
 
@@ -112,7 +112,7 @@
 - Dashboard 设计器、实时大屏和复杂拖拽报表编辑器。
 - Runtime Multi-Agent 讨论、多模型自动路由和动态创建专家 Agent。
 - Python 直接访问企业数据源、保存数据连接凭据或执行任何外部副作用。
-- 自动写回源业务系统；首版只支持一个 Sandbox Work Tracker MCP 的 `create_follow_up_task` 操作。
+- 自动写回源业务系统；首版受治理操作是语义目录变更（ADR-0009），外部 MCP 执行器（含 Sandbox Work Tracker）为后续可选项。
 - OCR、通用企业搜索、图片和扫描件知识摄取。
 - 匿名报告分享、公开上传外部文件和连接真实客户系统。
 - Kubernetes、多地域高可用、零停机部署和生产级多租户计费。

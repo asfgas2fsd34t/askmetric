@@ -2,7 +2,7 @@
 
 ## 目标
 
-AskMetric 是一个面向业务用户的 chat-first BI 产品，让用户无需编写 SQL 即可获得可验证分析。首版重点证明一条完整企业工作流，而不是追求连接器数量：一个 PostgreSQL 分析数据源、一个 B2B SaaS 参考场景、一个已配置模型，以及一个需要人工审批的 MCP 操作。
+AskMetric 是一个面向业务用户的 chat-first BI 产品，让用户无需编写 SQL 即可获得可验证分析。首版重点证明一条完整企业工作流，而不是追求连接器数量：一个 PostgreSQL 分析数据源、一个 B2B SaaS 参考场景、一个已配置模型，以及一个需要人工审批的语义目录变更操作。
 
 架构重点保证：
 
@@ -34,7 +34,8 @@ flowchart LR
     P --> V[(pgvector / RAG Index)]
     P --> L[模型与 Embedding Provider]
 
-    J -->|已批准调用| MCP[Sandbox Work Tracker MCP]
+    J -->|已批准执行| CAT[语义目录执行器]
+    J -.->|可选执行器| MCP[Sandbox Work Tracker MCP]
     J -->|Span / Metric| OT[OpenTelemetry]
     P -->|Span / Metric| OT
 ```
@@ -152,9 +153,9 @@ Python 返回经过校验的可审计分析，其中包含结论、指标和时�
 
 Java 将该结构持久化为事实来源，再确定性地渲染为不可变、独立的 HTML 分析报告。模型不能提供任意 HTML、JavaScript 或 ECharts Option。重新分析会创建新报告，并通过 `supersedesReportId` 关联旧版本；现有报告不会静默刷新。
 
-## 审批与 MCP
+## 审批与受治理执行
 
-Python 可以提出副作用操作，但不能执行。Java 使用确切参数保存不可变操作提案。拥有权限的人工根据工作区策略批准该确切提案；参数发生任何变化都会使审批失效。Java 随后使用幂等键调用 Sandbox Work Tracker MCP Server，并记录结果。
+Python 可以提出副作用操作，但不能执行。Java 使用确切参数保存不可变操作提案；提案创建本身必须经发起者显式确认。拥有权限的成员根据工作区策略批准该确切提案——宽松策略下管理员/分析师变更经确认弹框自批（confirm-to-record），严格策略下自批被拒并要求另一合格审批人；参数发生任何变化都会使审批失效。首个受治理执行器是语义目录变更（ADR-0009）：升级自定义口径或修订标准口径，批准后写入 metric_definition_version，幂等键保证只生效一次。外部 MCP 作为可选执行器接入同一接口。
 
 演示工作区可以允许自审批。企业工作区默认要求另一名拥有 `approve_action` 权限的成员审批。公开访客不能连接外部系统。
 

@@ -87,6 +87,6 @@ bash scripts/reset-demo-warehouse.sh
 
 ## 首版范围
 
-首版使用确定性的 B2B SaaS 合成数据，证明一条完整分析链路。它支持多轮对话、受治理的 SQL、带引用的 RAG、经确认的长期记忆、人工审批的 MCP 操作、可重现的 HTML 报告、全链路 Trace 和公开评测。
+首版使用确定性的 B2B SaaS 合成数据，证明一条完整分析链路。它支持多轮对话、受治理的 SQL、带引用的 RAG、经确认的长期记忆、人工审批的语义目录变更、可重现的 HTML 报告、全链路 Trace 和公开评测。
 
 首版明确不做通用助手、Dashboard 设计器、任意数据库自动理解、Multi-Agent 讨论框架或多数据库平台。

@@ -2,6 +2,16 @@
 
 本文档记录 AskMetric 当前技术探针中已经确认、但暂不影响 T01 验收的问题。每个问题都需要在进入生产持久化或并发压测前重新评估。
 
+## 数据源
+
+### DATA-001 数据连接未实体化，语义目录登记硬编码
+
+- **现状**：系统唯一数据源是 Demo Warehouse 的静态 JDBC 配置（`askmetric.query.datasource.*`）；表/字段白名单硬编码在 `QuerySqlValidator.REGISTERED_TABLES`，字段分级硬编码在 `EvidencePolicy.AGENT_VISIBLE_COLUMNS`。CONTEXT.md 定义的"数据连接（Data Connection）"与"数据分级（Data Classification）"实体未建，架构划给 catalog 模块的连接治理从未票化。
+- **为什么暂缓**：spec 明确首版只做一个 PostgreSQL 数据源，多连接器属 Out of Scope；Demo Warehouse 单源可跑通全部链路（用户决定 2026-09-10 推迟）。
+- **升级触发条件**：接入任何真实客户数据前（连接必须成为工作区治理实体：注册、加密只读凭据、按工作区隔离）；或需要按工作区配置字段分级时。
+- **建议方案**：新建 `data_connection` 表（加密 Secret、只读凭据、工作区隔离）；表/字段登记与分级从 Java 常量迁入数据库并挂到连接；QueryGateway 按工作区解析连接。多连接器仍属后续版本。
+- **验收标准**：连接注册/凭据加密/跨工作区隔离有测试覆盖；QuerySqlValidator 与 EvidencePolicy 的登记来源变为数据而非代码常量。
+
 ## 知识摄取
 
 ### KNOW-001 T20 知识存储与检索相对架构文档的取舍
