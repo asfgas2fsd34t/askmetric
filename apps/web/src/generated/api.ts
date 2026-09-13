@@ -185,6 +185,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-run-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit an Action Proposal draft derived from an Agent Run using a query grant
+         * @description Python Agent Runtime entry; exact parameters are snapshotted server-side from the run's bound custom metric definition. The draft must be confirmed by the initiator before it awaits approval; the Agent has no execution path. Per ADR-0009 the Agent may only submit PROMOTE_CUSTOM_CALIBER here.
+         */
+        post: operations["submitActionProposalForAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-proposals/{actionProposalId}/confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the creation of a draft Action Proposal as its initiator
+         * @description Only the initiator can confirm; parameters and idempotency key stay immutable, the proposal then awaits approval (T23).
+         */
+        post: operations["confirmActionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-proposals/{actionProposalId}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard a draft Action Proposal as its initiator
+         * @description A discarded proposal never produces side effects.
+         */
+        post: operations["discardActionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -343,6 +403,31 @@ export interface components {
             evidenceSnapshots: components["schemas"]["EvidenceSnapshot"][];
             analysisFindings: components["schemas"]["AnalysisFinding"][];
             conversationSummaries: components["schemas"]["ConversationSummary"][];
+            actionProposals: components["schemas"]["ActionProposal"][];
+        };
+        ActionProposal: {
+            actionProposalId: string;
+            workspaceId: string;
+            conversationId: string;
+            analysisTaskId: string;
+            sourceAgentRunId: string;
+            /** @enum {string} */
+            actionType: "PROMOTE_CUSTOM_CALIBER" | "REVISE_STANDARD_CALIBER";
+            /** @enum {string} */
+            status: "AWAITING_CONFIRMATION" | "AWAITING_APPROVAL" | "SUPERSEDED" | "DISCARDED";
+            metricKey: string;
+            versionLabel: string;
+            calculationRule: string;
+            timeBoundary: string;
+            exclusions: string;
+            policyVersion: number;
+            idempotencyKey: string;
+            proposedBy: string;
+            /** Format: date-time */
+            confirmedAt?: string;
+            supersededBy?: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         AnalysisFinding: {
             findingId: string;
@@ -956,6 +1041,119 @@ export interface operations {
             };
             /** @description Agent Run 不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    submitActionProposalForAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Query-Grant": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    runId: string;
+                    /** @enum {string} */
+                    actionType: "PROMOTE_CUSTOM_CALIBER";
+                };
+            };
+        };
+        responses: {
+            /** @description 已创建（或重放）的操作提案草案 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 请求无效、操作类型不受支持或运行未绑定自定义口径 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 查询授权无效或过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Agent Run 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    confirmActionProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                actionProposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已确认，提案进入等待审批 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 提案不是待确认状态或当前成员不是发起者 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discardActionProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                actionProposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已放弃的提案 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 提案不是待确认状态或当前成员不是发起者 */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

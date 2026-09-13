@@ -72,6 +72,28 @@ def test_request_validation_accepts_an_optional_last_event_sequence():
         validate_request(invalid)
 
 
+def test_request_validation_scopes_metric_definition_to_standard_or_custom():
+    request = {
+        "eventId": "evt-1",
+        "schemaVersion": 1,
+        "eventType": "agent.run.requested",
+        "sequence": 1,
+        "occurredAt": "2026-08-28T02:00:00Z",
+        "conversationId": "conv-1",
+        "runId": "run-1",
+        "message": "hello",
+        "metricDefinitionVersionId": "metric_definition_mrr_v3",
+        "metricDefinitionScope": "CUSTOM",
+        "queryGrant": "grant-1",
+    }
+
+    validate_request(request)
+    validate_request({**request, "metricDefinitionScope": "STANDARD"})
+
+    with pytest.raises(ValueError, match="is not one of"):
+        validate_request({**request, "metricDefinitionScope": "SHARED"})
+
+
 def test_listener_publishes_plan_and_terminal_events():
     request = {
         "eventId": "evt-1",

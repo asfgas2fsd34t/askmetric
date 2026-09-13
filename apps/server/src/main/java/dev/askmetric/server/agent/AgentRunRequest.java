@@ -14,6 +14,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class AgentRunRequest {
+    /** 口径作用域的合法取值；与 contracts 里 metricDefinitionScope 枚举保持一致。 */
+    private static final java.util.Set<String> METRIC_DEFINITION_SCOPES =
+            java.util.Set.of("STANDARD", "CUSTOM");
+
     private String eventId;
     private int schemaVersion;
     private AgentRunEventType eventType;
@@ -25,6 +29,7 @@ public class AgentRunRequest {
     private String taskGoal;
     private Long lastEventSequence;
     private String metricDefinitionVersionId;
+    private String metricDefinitionScope;
     private String queryGrant;
 
     @JsonCreator
@@ -38,7 +43,7 @@ public class AgentRunRequest {
             @JsonProperty("runId") String runId,
             @JsonProperty("message") String message) {
         this(eventId, schemaVersion, eventType, sequence, occurredAt,
-                conversationId, runId, message, null, null, null, null);
+                conversationId, runId, message, null, null, null, null, null);
     }
 
     public AgentRunRequest(
@@ -53,6 +58,7 @@ public class AgentRunRequest {
             String taskGoal,
             Long lastEventSequence,
             String metricDefinitionVersionId,
+            String metricDefinitionScope,
             String queryGrant) {
         requireText(eventId, "eventId");
         if (schemaVersion != 1) {
@@ -82,6 +88,9 @@ public class AgentRunRequest {
         if (metricDefinitionVersionId != null && metricDefinitionVersionId.isBlank()) {
             throw new IllegalArgumentException("metricDefinitionVersionId must not be blank");
         }
+        if (metricDefinitionScope != null && !METRIC_DEFINITION_SCOPES.contains(metricDefinitionScope)) {
+            throw new IllegalArgumentException("metricDefinitionScope must be STANDARD or CUSTOM");
+        }
         if (queryGrant != null && queryGrant.isBlank()) {
             throw new IllegalArgumentException("queryGrant must not be blank");
         }
@@ -96,6 +105,7 @@ public class AgentRunRequest {
         this.taskGoal = taskGoal;
         this.lastEventSequence = lastEventSequence;
         this.metricDefinitionVersionId = metricDefinitionVersionId;
+        this.metricDefinitionScope = metricDefinitionScope;
         this.queryGrant = queryGrant;
     }
 

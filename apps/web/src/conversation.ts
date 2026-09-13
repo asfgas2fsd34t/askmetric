@@ -5,6 +5,7 @@ import type { components, paths } from "./generated/api";
 export type ConversationListItem = components["schemas"]["ConversationListItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type UserMemory = components["schemas"]["UserMemory"];
+export type ActionProposal = components["schemas"]["ActionProposal"];
 export type ConversationSnapshot = components["schemas"]["ConversationSnapshot"];
 export type ConversationMessage = components["schemas"]["ConversationMessage"];
 export type MessageProcessed = components["schemas"]["MessageProcessed"];
@@ -297,6 +298,44 @@ export async function loadUserMemories(
   });
   if (fetchError || response.status >= 400) {
     throw new Error("无法加载记忆");
+  }
+  return data;
+}
+
+/** 发起者确认操作提案创建；确认后提案等待审批且参数不可变。 */
+export async function confirmActionProposal(
+  token: string,
+  workspaceId: string,
+  actionProposalId: string,
+): Promise<ActionProposal> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/action-proposals/{actionProposalId}/confirmation",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { actionProposalId } },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法确认操作提案");
+  }
+  return data;
+}
+
+/** 发起者放弃待确认提案；放弃的提案不会产生任何副作用。 */
+export async function discardActionProposal(
+  token: string,
+  workspaceId: string,
+  actionProposalId: string,
+): Promise<ActionProposal> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/action-proposals/{actionProposalId}/discard",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { actionProposalId } },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法放弃操作提案");
   }
   return data;
 }

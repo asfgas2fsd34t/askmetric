@@ -18,6 +18,7 @@ import dev.askmetric.server.analysis.AnalysisTask;
 import dev.askmetric.server.analysis.AnalysisTaskEventType;
 import dev.askmetric.server.analysis.AnalysisTaskMapper;
 import dev.askmetric.server.analysis.AnalysisTaskStatus;
+import dev.askmetric.server.approval.ActionProposalService;
 import dev.askmetric.server.catalog.MetricDefinitionService;
 import dev.askmetric.server.catalog.MetricDefinitionVersion;
 import dev.askmetric.server.evidence.EvidenceSnapshotService;
@@ -52,6 +53,7 @@ public class ConversationService {
     private final EvidenceSnapshotService evidenceSnapshotService;
     private final AnalysisFindingService analysisFindingService;
     private final ConversationSummaryMapper conversationSummaryMapper;
+    private final ActionProposalService actionProposalService;
     private final AgentQueryGrantService queryGrantService;
     private final ObjectMapper objectMapper;
     private final String requestTopic;
@@ -68,6 +70,7 @@ public class ConversationService {
             EvidenceSnapshotService evidenceSnapshotService,
             AnalysisFindingService analysisFindingService,
             ConversationSummaryMapper conversationSummaryMapper,
+            ActionProposalService actionProposalService,
             AgentQueryGrantService queryGrantService,
             ObjectMapper objectMapper,
             @Value("${askmetric.rocketmq.request-topic:askmetric-agent-run-request}") String requestTopic) {
@@ -82,6 +85,7 @@ public class ConversationService {
         this.evidenceSnapshotService = evidenceSnapshotService;
         this.analysisFindingService = analysisFindingService;
         this.conversationSummaryMapper = conversationSummaryMapper;
+        this.actionProposalService = actionProposalService;
         this.queryGrantService = queryGrantService;
         this.objectMapper = objectMapper;
         this.requestTopic = requestTopic;
@@ -169,6 +173,8 @@ public class ConversationService {
         snapshot.setAnalysisFindings(analysisFindingService.list(userSubject, workspaceId, conversationId));
         snapshot.setConversationSummaries(
                 conversationSummaryMapper.list(userSubject, workspaceId, conversationId));
+        snapshot.setActionProposals(
+                actionProposalService.list(userSubject, workspaceId, conversationId));
         return snapshot;
     }
 
@@ -228,6 +234,8 @@ public class ConversationService {
         if (processed.getAgentRun().getAnalysisTaskId() != null
                 && !processed.getAgentRun().getAuditEvents().getLast().getEventType().isTerminal()) {
             enqueueAnalysisRun(
+                    userSubject,
+                    workspaceId,
                     conversationId,
                     content,
                     processed.getAnalysisTask().getGoal(),
@@ -290,13 +298,26 @@ public class ConversationService {
         }
     }
 
-    private void enqueueAnalysisRun(String conversationId, String message, String taskGoal, PersistedAgentRun run) {
+    private void enqueueAnalysisRun(
+            String userSubject,
+            String workspaceId,
+            String conversationId,
+            String message,
+            String taskGoal,
+            PersistedAgentRun run) {
         String runId = run.getRunId();
         String metricDefinitionVersionId = run.getMetricDefinitionVersionId();
         // 口径已确认的运行才签发查询授权；未确认口径的运行没有任何受治理查询能力。
         String queryGrant = metricDefinitionVersionId == null
                 ? null
                 : queryGrantService.mint(runId, java.time.Instant.now());
+        // 口径作用域随请求下发，Python 据此决定是否为自定义口径提出升级提案。
+        String metricDefinitionScope = metricDefinitionVersionId == null
+                ? null
+                : metricDefinitionService
+                        .findVersion(userSubject, workspaceId, metricDefinitionVersionId)
+                        .map(version -> version.getDefinitionSource().name())
+                        .orElseThrow(() -> new AccessDeniedException("Metric Definition not found in Workspace"));
         AgentRunRequest request = new AgentRunRequest(
                 "agent_run_request_" + runId,
                 1,
@@ -309,6 +330,7 @@ public class ConversationService {
                 taskGoal,
                 agentRunMapper.latestSequence(runId),
                 metricDefinitionVersionId,
+                metricDefinitionScope,
                 queryGrant);
         try {
             String payload = objectMapper.writeValueAsString(request);

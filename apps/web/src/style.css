@@ -819,6 +819,71 @@ textarea {
   font-size: 11px;
 }
 
+.proposal-closed {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+}
+
+.proposal-card .proposal-params {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.proposal-params div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.proposal-params dt {
+  color: var(--muted);
+  margin: 0;
+}
+
+.proposal-params dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.proposal-idempotency-key {
+  font-family: var(--mono-font);
+  font-size: 11px;
+}
+
+.proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proposal-confirm {
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 6px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.proposal-confirm:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.proposal-discard {
+  color: var(--red);
+}
+
+.proposal-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .finding-details summary {
   color: var(--muted);
   font-size: 11px;

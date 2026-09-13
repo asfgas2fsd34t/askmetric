@@ -15,17 +15,68 @@
     "message"
   ],
   "properties": {
-    "eventId": { "type": "string", "minLength": 1 },
-    "schemaVersion": { "const": 1 },
-    "eventType": { "enum": ["agent.run.requested", "agent.run.cancel.requested"] },
-    "sequence": { "type": "integer", "minimum": 1 },
-    "occurredAt": { "type": "string", "format": "date-time" },
-    "conversationId": { "type": "string", "minLength": 1 },
-    "runId": { "type": "string", "minLength": 1 },
-    "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
-    "taskGoal": { "type": "string", "minLength": 1, "maxLength": 4000, "description": "本次运行推进的 Analysis Task 目标；Python 用它而不是仅凭消息内容判断分析场景。仅 agent.run.requested 携带。" },
-    "lastEventSequence": { "type": "integer", "minimum": 0, "description": "入队时该 Agent Run 已持久化的最大事件序号；Python 从 lastEventSequence + 1 开始发号。仅 agent.run.requested 携带。" },
-    "metricDefinitionVersionId": { "type": "string", "minLength": 1, "description": "本次运行已绑定的指标定义版本；Python 将其作为发现的可引用指标。仅 agent.run.requested 且口径已确认时携带。" },
-    "queryGrant": { "type": "string", "minLength": 1, "description": "Java 为该运行签发的短期 HMAC 查询授权，用于调用 Java Query Gateway 的 Agent 查询端点。仅 agent.run.requested 且口径已确认时携带。" }
+    "eventId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventType": {
+      "enum": [
+        "agent.run.requested",
+        "agent.run.cancel.requested"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "conversationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "taskGoal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "本次运行推进的 Analysis Task 目标；Python 用它而不是仅凭消息内容判断分析场景。仅 agent.run.requested 携带。"
+    },
+    "lastEventSequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "入队时该 Agent Run 已持久化的最大事件序号；Python 从 lastEventSequence + 1 开始发号。仅 agent.run.requested 携带。"
+    },
+    "metricDefinitionVersionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "本次运行已绑定的指标定义版本；Python 将其作为发现的可引用指标。仅 agent.run.requested 且口径已确认时携带。"
+    },
+    "metricDefinitionScope": { "enum": ["STANDARD", "CUSTOM"], "description": "本次运行绑定口径的来源作用域；Python 据此决定是否为自定义口径提出升级提案。仅 agent.run.requested 且口径已确认时携带。" },
+    "queryGrant": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Java 为该运行签发的短期 HMAC 查询授权，用于调用 Java Query Gateway 的 Agent 查询端点。仅 agent.run.requested 且口径已确认时携带。"
+    },
+    "metricDefinitionScope": {
+      "enum": [
+        "STANDARD",
+        "CUSTOM"
+      ],
+      "description": "本次运行绑定口径的来源作用域；Python 据此决定是否为自定义口径提出升级提案。仅 agent.run.requested 且口径已确认时携带。"
+    }
   }
 }

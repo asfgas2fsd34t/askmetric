@@ -31,6 +31,28 @@ class AgentRunContractValidatorTest {
     }
 
     @Test
+    void acceptsAMetricDefinitionScopeOfStandardOrCustom() {
+        validator.validateRequest(new AgentRunRequest(
+                "request-1", 1, AgentRunEventType.REQUESTED, 1,
+                Instant.parse("2026-09-13T02:00:00Z"), "conv-1", "run-1", "MRR",
+                "goal", 2L, "metric_definition_mrr_v3", "CUSTOM", "grant-1"));
+        validator.validateRequest(new AgentRunRequest(
+                "request-2", 1, AgentRunEventType.REQUESTED, 1,
+                Instant.parse("2026-09-13T02:00:00Z"), "conv-1", "run-1", "MRR",
+                "goal", 2L, "metric_definition_mrr_v3", "STANDARD", "grant-1"));
+    }
+
+    @Test
+    void rejectsAnUnknownMetricDefinitionScope() {
+        assertThatThrownBy(() -> new AgentRunRequest(
+                "request-1", 1, AgentRunEventType.REQUESTED, 1,
+                Instant.parse("2026-09-13T02:00:00Z"), "conv-1", "run-1", "MRR",
+                "goal", 2L, "metric_definition_mrr_v3", "SHARED", "grant-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("metricDefinitionScope");
+    }
+
+    @Test
     void rejectsUnknownEventProperties() throws Exception {
         var payload = objectMapper.readTree("""
                 {

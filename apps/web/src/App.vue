@@ -42,6 +42,9 @@ import {
   proposeUserMemory,
   uploadKnowledgeSource,
   watchAgentRun,
+  confirmActionProposal,
+  discardActionProposal,
+  type ActionProposal,
   type AgentRunEvent,
   type ConversationSnapshot,
   type ConversationListItem,
@@ -50,6 +53,12 @@ import {
   type UserMemory,
 } from "./conversation";
 import { loadWorkspaceSession, type WorkspaceSession } from "./session";
+import {
+  proposalActionTypeLabel,
+  proposalIsActionable,
+  proposalStatusBadgeClass,
+  proposalStatusLabel,
+} from "./action-proposals";
 import { applyTheme, initialTheme, toggleTheme, type ThemePreference } from "./theme";
 
 const session = ref<WorkspaceSession>();
@@ -233,6 +242,46 @@ async function refreshKnowledge(workspaceId: string) {
     knowledgeError.value = "";
   } catch {
     knowledgeError.value = "无法加载知识来源";
+  }
+}
+
+const proposalBusy = ref(false);
+const proposalError = ref("");
+
+/** 发起者显式确认提案创建；确认弹框防止误操作，提案自此等待审批且参数不可变。 */
+async function confirmProposal(proposal: ActionProposal) {
+  if (!session.value || proposalBusy.value) return;
+  const confirmed = window.confirm(
+    `确认创建该操作提案？\n类型：${proposalActionTypeLabel(proposal.actionType)}`
+    + `\n计算规则：${proposal.calculationRule}\n幂等键：${proposal.idempotencyKey}`
+    + "\n确认后提案进入等待审批，参数不可修改。");
+  if (!confirmed) return;
+  proposalBusy.value = true;
+  proposalError.value = "";
+  try {
+    await confirmActionProposal(
+      await accessToken(), session.value.currentMembership.workspaceId, proposal.actionProposalId);
+    await refresh();
+  } catch {
+    proposalError.value = "无法确认操作提案";
+  } finally {
+    proposalBusy.value = false;
+  }
+}
+
+/** 发起者放弃提案草案；放弃的提案不会产生任何副作用。 */
+async function discardProposal(proposal: ActionProposal) {
+  if (!session.value || proposalBusy.value) return;
+  proposalBusy.value = true;
+  proposalError.value = "";
+  try {
+    await discardActionProposal(
+      await accessToken(), session.value.currentMembership.workspaceId, proposal.actionProposalId);
+    await refresh();
+  } catch {
+    proposalError.value = "无法放弃操作提案";
+  } finally {
+    proposalBusy.value = false;
   }
 }
 
@@ -805,6 +854,57 @@ function closeInspectorOnEscape(event: KeyboardEvent) {
                 <li v-for="(uncertainty, index) in finding.uncertainties" :key="index">{{ uncertainty }}</li>
               </ul>
             </details>
+          </article>
+        </section>
+
+        <section
+          v-if="(activeConversation?.actionProposals?.length ?? 0) > 0"
+          class="context-section"
+          aria-labelledby="proposals-heading"
+        >
+          <h3 id="proposals-heading">操作提案</h3>
+          <div v-if="proposalError" class="knowledge-error" role="alert">{{ proposalError }}</div>
+          <article
+            v-for="proposal in activeConversation?.actionProposals ?? []"
+            :key="proposal.actionProposalId"
+            class="finding-card proposal-card"
+          >
+            <header class="finding-header">
+              <span class="finding-badge">{{ proposalActionTypeLabel(proposal.actionType) }}</span>
+              <span class="task-badge" :class="proposalStatusBadgeClass(proposal.status)">
+                {{ proposalStatusLabel(proposal.status) }}
+              </span>
+            </header>
+            <p class="finding-metric">
+              {{ proposal.metricKey.toUpperCase() }} · {{ proposal.versionLabel }} · 策略版本 v{{ proposal.policyVersion }}
+            </p>
+            <dl class="proposal-params">
+              <div><dt>计算规则</dt><dd>{{ proposal.calculationRule }}</dd></div>
+              <div><dt>时间边界</dt><dd>{{ proposal.timeBoundary }}</dd></div>
+              <div><dt>排除项</dt><dd>{{ proposal.exclusions }}</dd></div>
+              <div><dt>幂等键</dt><dd class="proposal-idempotency-key">{{ proposal.idempotencyKey }}</dd></div>
+            </dl>
+            <footer v-if="proposalIsActionable(proposal, session?.user?.id)" class="proposal-actions">
+              <button
+                class="proposal-confirm"
+                type="button"
+                :disabled="proposalBusy"
+                @click="confirmProposal(proposal)"
+              >
+                确认创建提案
+              </button>
+              <button
+                class="icon-button proposal-discard"
+                type="button"
+                title="放弃提案"
+                aria-label="放弃提案"
+                :disabled="proposalBusy"
+                @click="discardProposal(proposal)"
+              >
+                ✕
+              </button>
+            </footer>
+            <p v-else class="proposal-note">Agent 只能提出提案；执行需要人工审批（后续版本提供）。</p>
           </article>
         </section>
 

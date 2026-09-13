@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cancelAgentRun, createMessage, loadConversation, loadConversations, subscribeToAgentRun, watchAgentRun } from "./conversation";
+import {
+  cancelAgentRun,
+  confirmActionProposal,
+  createMessage,
+  discardActionProposal,
+  loadConversation,
+  loadConversations,
+  subscribeToAgentRun,
+  watchAgentRun,
+} from "./conversation";
 
 describe("Conversation persistence client", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -179,6 +188,49 @@ describe("Conversation persistence client", () => {
 
     const reconnected = fetchMock.mock.calls[1][1] as RequestInit;
     expect(new Headers(reconnected.headers).get("Last-Event-ID")).toBe("2");
+  });
+
+  it("confirms an Action Proposal as its initiator", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        actionProposalId: "action_proposal_1",
+        status: "AWAITING_APPROVAL",
+        confirmedAt: "2026-09-13T10:00:00Z",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const confirmed = await confirmActionProposal(
+      "token",
+      "workspace-demo",
+      "action_proposal_1",
+    );
+
+    const submitted = request(fetchMock, 0);
+    expect(submitted.method).toBe("POST");
+    expect(submitted.url).toContain(
+      "/api/v1/action-proposals/action_proposal_1/confirmation");
+    expect(submitted.headers.get("X-Workspace-Id")).toBe("workspace-demo");
+    expect(confirmed.status).toBe("AWAITING_APPROVAL");
+  });
+
+  it("discards a draft Action Proposal as its initiator", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ actionProposalId: "action_proposal_1", status: "DISCARDED" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const discarded = await discardActionProposal(
+      "token",
+      "workspace-demo",
+      "action_proposal_1",
+    );
+
+    const submitted = request(fetchMock, 0);
+    expect(submitted.method).toBe("POST");
+    expect(submitted.url).toContain(
+      "/api/v1/action-proposals/action_proposal_1/discard");
+    expect(discarded.status).toBe("DISCARDED");
   });
 
   it("stops reconnecting after a cancelled event", async () => {

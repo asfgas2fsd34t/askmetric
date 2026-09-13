@@ -163,6 +163,19 @@ def retrieve_knowledge(base_url: str, query_grant: str, run_id: str, query: str)
         return json.loads(response.read().decode("utf-8"))
 
 
+def submit_action_proposal(base_url: str, query_grant: str, run_id: str, action_type: str) -> dict:
+    """用同一查询授权提交操作提案；确切参数由 Java 从运行绑定的口径定义快照推导。"""
+    payload = json.dumps({"runId": run_id, "actionType": action_type}).encode("utf-8")
+    outgoing = urllib.request.Request(
+        base_url + "/api/v1/agent-run-proposals",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-Query-Grant": query_grant},
+        method="POST",
+    )
+    with urllib.request.urlopen(outgoing, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def execute_drilldown(request: dict) -> dict:
     """执行受治理下钻：检索证据、推导已验证发现；缺少授权视为运行失败。"""
     query_grant = request.get("queryGrant")
@@ -234,6 +247,26 @@ def completed_message(request: dict) -> str:
     return "分析计划已展示，等待继续推进分析任务"
 
 
+def _maybe_submit_caliber_proposal(request: dict, finding: dict | None) -> None:
+    """自定义口径的已验证发现之后，提议把该口径升级为工作区共享版本（ADR-0009）。
+
+    提案是可选的后续动作：提交失败只降级为无提案，分析结论本身不受影响；
+    幂等键由 Java 按（运行、操作类型）确定，重放不会产生第二个提案。
+    """
+    if not finding or not finding.get("verified"):
+        return
+    if request.get("metricDefinitionScope") != "CUSTOM":
+        return
+    query_grant = request.get("queryGrant")
+    if not query_grant:
+        return
+    try:
+        submit_action_proposal(
+            server_base_url(), query_grant, request["runId"], "PROMOTE_CUSTOM_CALIBER")
+    except Exception:
+        LOG.warning("操作提案提交失败，本次运行以无提案继续", exc_info=True)
+
+
 class AgentListener(MessageListener):
     def __init__(self, producer: Producer):
         self.producer = producer
@@ -284,6 +317,9 @@ class AgentListener(MessageListener):
                 state["started"] = True
         # 受治理查询是网络 I/O，不持有状态锁，取消请求可以被及时观察到。
         finding = execute_drilldown(request) if drilldown else None
+        # 查询期间被取消或已失败的运行不再产生任何服务端状态，包括提案草案。
+        if drilldown and not state["cancelled"] and not state["failed"]:
+            _maybe_submit_caliber_proposal(request, finding)
         with self._state_lock:
             if state["failed"] or state["completed"] or state["cancelled"]:
                 return

@@ -82,6 +82,7 @@ class ConversationServiceTest {
                 evidenceSnapshotService,
                 mock(dev.askmetric.server.analysis.AnalysisFindingService.class),
                 mock(dev.askmetric.server.conversation.ConversationSummaryMapper.class),
+                mock(dev.askmetric.server.approval.ActionProposalService.class),
                 mock(dev.askmetric.server.agent.AgentQueryGrantService.class),
                 new ObjectMapper().findAndRegisterModules(),
                 "askmetric-agent-run-request");

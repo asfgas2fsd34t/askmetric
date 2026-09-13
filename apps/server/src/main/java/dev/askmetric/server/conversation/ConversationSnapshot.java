@@ -3,6 +3,7 @@ package dev.askmetric.server.conversation;
 import dev.askmetric.server.agent.PersistedAgentRun;
 import dev.askmetric.server.analysis.AnalysisFinding;
 import dev.askmetric.server.analysis.AnalysisTask;
+import dev.askmetric.server.approval.ActionProposal;
 import dev.askmetric.server.evidence.EvidenceSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -29,4 +30,6 @@ public class ConversationSnapshot {
     private List<AnalysisFinding> analysisFindings = new ArrayList<>();
     /** Conversation 的版本化派生摘要；与原始 Message 并存，不替代。 */
     private List<ConversationSummary> conversationSummaries = new ArrayList<>();
+    /** Conversation 内的操作提案；参数不可变，等待人工决定。 */
+    private List<ActionProposal> actionProposals = new ArrayList<>();
 }
