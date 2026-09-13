@@ -322,6 +322,89 @@ paths:
           description: 查询授权无效或过期
         "404":
           description: Agent Run 不存在
+  /api/v1/agent-run-proposals:
+    post:
+      operationId: submitActionProposalForAgentRun
+      summary: Submit an Action Proposal draft derived from an Agent Run using a query grant
+      description: Python Agent Runtime entry; exact parameters are snapshotted server-side from the run's bound custom metric definition. The draft must be confirmed by the initiator before it awaits approval; the Agent has no execution path. Per ADR-0009 the Agent may only submit PROMOTE_CUSTOM_CALIBER here.
+      parameters:
+        - name: X-Query-Grant
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runId, actionType]
+              properties:
+                runId:
+                  type: string
+                actionType:
+                  type: string
+                  enum: [PROMOTE_CUSTOM_CALIBER]
+      responses:
+        "201":
+          description: 已创建（或重放）的操作提案草案
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 请求无效、操作类型不受支持或运行未绑定自定义口径
+        "401":
+          description: 查询授权无效或过期
+        "404":
+          description: Agent Run 不存在
+  /api/v1/action-proposals/{actionProposalId}/confirmation:
+    post:
+      operationId: confirmActionProposal
+      summary: Confirm the creation of a draft Action Proposal as its initiator
+      description: Only the initiator can confirm; parameters and idempotency key stay immutable, the proposal then awaits approval (T23).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actionProposalId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 已确认，提案进入等待审批
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 提案不是待确认状态或当前成员不是发起者
+  /api/v1/action-proposals/{actionProposalId}/discard:
+    post:
+      operationId: discardActionProposal
+      summary: Discard a draft Action Proposal as its initiator
+      description: A discarded proposal never produces side effects.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actionProposalId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 已放弃的提案
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 提案不是待确认状态或当前成员不是发起者
   /api/v1/conversations:
     get:
       operationId: listConversations
@@ -617,7 +700,7 @@ components:
           format: date-time
     ConversationSnapshot:
       type: object
-      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks, evidenceSnapshots, analysisFindings, conversationSummaries]
+      required: [conversationId, workspaceId, title, createdAt, updatedAt, messages, agentRuns, analysisTasks, evidenceSnapshots, analysisFindings, conversationSummaries, actionProposals]
       properties:
         conversationId:
           type: string
@@ -655,6 +738,54 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConversationSummary"
+        actionProposals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActionProposal"
+    ActionProposal:
+      type: object
+      required: [actionProposalId, workspaceId, conversationId, analysisTaskId, sourceAgentRunId, actionType, status, metricKey, versionLabel, calculationRule, timeBoundary, exclusions, policyVersion, idempotencyKey, proposedBy, createdAt]
+      properties:
+        actionProposalId:
+          type: string
+        workspaceId:
+          type: string
+        conversationId:
+          type: string
+        analysisTaskId:
+          type: string
+        sourceAgentRunId:
+          type: string
+        actionType:
+          type: string
+          enum: [PROMOTE_CUSTOM_CALIBER, REVISE_STANDARD_CALIBER]
+        status:
+          type: string
+          enum: [AWAITING_CONFIRMATION, AWAITING_APPROVAL, SUPERSEDED, DISCARDED]
+        metricKey:
+          type: string
+        versionLabel:
+          type: string
+        calculationRule:
+          type: string
+        timeBoundary:
+          type: string
+        exclusions:
+          type: string
+        policyVersion:
+          type: integer
+        idempotencyKey:
+          type: string
+        proposedBy:
+          type: string
+        confirmedAt:
+          type: string
+          format: date-time
+        supersededBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     AnalysisFinding:
       type: object
       required: [findingId, conversationId, analysisTaskId, runId, metricDefinitionVersionId, verified, conclusion, evidenceSnapshotIds, assumptions, uncertainties, createdAt]

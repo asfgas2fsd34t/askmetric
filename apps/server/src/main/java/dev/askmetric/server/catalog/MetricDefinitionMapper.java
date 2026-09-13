@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
@@ -55,6 +56,21 @@ public interface MetricDefinitionMapper {
             @Param("userSubject") String userSubject,
             @Param("workspaceId") String workspaceId,
             @Param("metricKey") String metricKey);
+
+    /** 读取一个确切的指标定义版本；提案派生与请求装配都以此为准。 */
+    @ResultMap("metricDefinitionVersion")
+    @Select("""
+            select definition.*
+            from metric_definition_version definition
+            join workspace_membership membership on membership.workspace_id = definition.workspace_id
+            where definition.metric_definition_version_id = #{metricDefinitionVersionId}
+              and definition.workspace_id = #{workspaceId}
+              and membership.user_subject = #{userSubject}
+            """)
+    Optional<MetricDefinitionVersion> findVersion(
+            @Param("userSubject") String userSubject,
+            @Param("workspaceId") String workspaceId,
+            @Param("metricDefinitionVersionId") String metricDefinitionVersionId);
 
     /** 基于标准版本创建只属于当前 Workspace 的不可变自定义指标版本。 */
     @Insert("""

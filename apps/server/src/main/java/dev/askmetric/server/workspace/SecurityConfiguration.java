@@ -17,9 +17,9 @@ class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        // Agent 查询、知识检索与记忆读取端点以 Java 签发的短期 HMAC 查询授权认证，不走终端用户 JWT。
+                        // Agent 查询、知识检索、记忆读取与提案提交端点以 Java 签发的短期 HMAC 查询授权认证，不走终端用户 JWT。
                         .requestMatchers("/api/v1/agent-run-queries", "/api/v1/agent-run-knowledge",
-                                "/api/v1/agent-run-memories").permitAll()
+                                "/api/v1/agent-run-memories", "/api/v1/agent-run-proposals").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(withDefaults()))
                 .build();

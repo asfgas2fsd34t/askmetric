@@ -21,6 +21,13 @@ public class MetricDefinitionService {
         return mapper.findLatestStandard(userSubject, workspaceId, metricKey);
     }
 
+    /** 读取一个确切的指标定义版本；口径快照与请求装配都以此为准。 */
+    @Transactional(readOnly = true)
+    public Optional<MetricDefinitionVersion> findVersion(
+            String userSubject, String workspaceId, String metricDefinitionVersionId) {
+        return mapper.findVersion(userSubject, workspaceId, metricDefinitionVersionId);
+    }
+
     /** 以标准版本为基线保存业务用户提交的自定义计算规则。 */
     @Transactional
     public MetricDefinitionVersion createCustom(
