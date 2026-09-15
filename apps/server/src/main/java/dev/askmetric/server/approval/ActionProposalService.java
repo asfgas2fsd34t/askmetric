@@ -2,7 +2,12 @@ package dev.askmetric.server.approval;
 
 import dev.askmetric.server.agent.AgentRunContext;
 import dev.askmetric.server.agent.AgentRunMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,5 +80,114 @@ public class ActionProposalService {
         // 成员视角校验归属，工作区外的成员无法读取本工作区的提案。
         return mapper.find(userSubject, workspaceId, actionProposalId)
                 .orElseThrow(() -> new IllegalStateException("Action Proposal was not persisted"));
+    }
+
+    /** 有权限成员批准提案；守卫失败时按可区分的原因拒绝，不产生部分状态。 */
+    @Transactional
+    public ActionProposal approve(String userSubject, String workspaceId, String actionProposalId) {
+        return decide(userSubject, workspaceId, actionProposalId, true);
+    }
+
+    /** 有权限成员拒绝提案；拒绝是不可逆终态，不会产生任何副作用。 */
+    @Transactional
+    public ActionProposal reject(String userSubject, String workspaceId, String actionProposalId) {
+        return decide(userSubject, workspaceId, actionProposalId, false);
+    }
+
+    private ActionProposal decide(String userSubject, String workspaceId, String actionProposalId, boolean approve) {
+        ActionProposal proposal = mapper.find(userSubject, workspaceId, actionProposalId)
+                .orElseThrow(() -> new IllegalArgumentException("提案不存在或不属于当前工作区"));
+        if (proposal.getStatus() != ActionProposalStatus.AWAITING_APPROVAL) {
+            throw new IllegalArgumentException(
+                    "提案当前状态是 " + proposal.getStatus() + "，不可审批；只有等待审批的提案可以被批准或拒绝");
+        }
+        Map<String, Object> policy = mapper.currentPolicy(workspaceId);
+        int currentVersion = ((Number) policy.get("policy_version")).intValue();
+        if (currentVersion != proposal.getPolicyVersion()) {
+            throw new IllegalArgumentException(
+                    "工作区策略版本已从 " + proposal.getPolicyVersion() + " 变为 " + currentVersion
+                            + "，提案过期，需要以新提案重新发起");
+        }
+        if (Boolean.TRUE.equals(policy.get("requires_separate_approver"))
+                && proposal.getProposedBy().equals(userSubject)) {
+            throw new IllegalArgumentException("当前策略要求分离审批，发起者不能批准或拒绝自己的提案");
+        }
+        int updated = approve
+                ? mapper.approve(userSubject, workspaceId, actionProposalId)
+                : mapper.reject(userSubject, workspaceId, actionProposalId);
+        if (updated != 1) {
+            throw new IllegalArgumentException("提案审批未生效：权限、状态或策略守卫未通过");
+        }
+        return find(userSubject, workspaceId, actionProposalId);
+    }
+
+    /**
+     * 有审批权限的成员直接创建标准口径修订提案（ADR-0009 自上而下路径）。
+     * 幂等键按参数内容派生：相同参数重复提交重放首提案，改参数即新提案。
+     */
+    @Transactional
+    public ActionProposal createRevisionFromMember(
+            String userSubject, String workspaceId, CreateRevisionRequest request) {
+        String metricKey = requiredText(request == null ? null : request.getMetricKey(), "metricKey", 100);
+        String versionLabel = requiredText(request == null ? null : request.getVersionLabel(), "versionLabel", 100);
+        String calculationRule = requiredText(request == null ? null : request.getCalculationRule(), "calculationRule", 2000);
+        String timeBoundary = requiredText(request == null ? null : request.getTimeBoundary(), "timeBoundary", 2000);
+        String exclusions = requiredText(request == null ? null : request.getExclusions(), "exclusions", 2000);
+        // 长度前缀拼接避免用户文本含换行时不同参数组合得到同一幂等键。
+        String canonical = String.valueOf(workspaceId.length()) + ":" + workspaceId
+                + String.valueOf(metricKey.length()) + ":" + metricKey
+                + String.valueOf(versionLabel.length()) + ":" + versionLabel
+                + String.valueOf(calculationRule.length()) + ":" + calculationRule
+                + String.valueOf(timeBoundary.length()) + ":" + timeBoundary
+                + String.valueOf(exclusions.length()) + ":" + exclusions;
+        String idempotencyKey = "REVISE:" + sha256(canonical);
+        String actionProposalId = "action_proposal_" + UUID.randomUUID();
+        if (mapper.insertFromMember(
+                userSubject, workspaceId, actionProposalId,
+                ActionProposalType.REVISE_STANDARD_CALIBER.name(),
+                metricKey, versionLabel, calculationRule, timeBoundary, exclusions,
+                idempotencyKey) != 1) {
+            return mapper.findByIdempotencyKey(workspaceId, idempotencyKey)
+                    .orElseThrow(() -> new IllegalArgumentException("当前成员没有创建修订提案的权限"));
+        }
+        mapper.supersedeActiveMemberRevisions(workspaceId, metricKey, actionProposalId);
+        return find(userSubject, workspaceId, actionProposalId);
+    }
+
+    /** 审批队列：等待审批的提案按创建时间排列。 */
+    @Transactional(readOnly = true)
+    public List<ActionProposal> listAwaitingApproval(String userSubject, String workspaceId) {
+        return mapper.listByStatus(userSubject, workspaceId, ActionProposalStatus.AWAITING_APPROVAL.name());
+    }
+
+    private static String requiredText(String value, String field, int maxLength) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        String normalized = value.strip();
+        if (normalized.length() > maxLength) {
+            throw new IllegalArgumentException(field + " must not exceed " + maxLength + " characters");
+        }
+        return normalized;
+    }
+
+    private static String sha256(String content) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(content.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    /** 成员直建修订提案的请求体。 */
+    @lombok.Data
+    public static class CreateRevisionRequest {
+        private String metricKey;
+        private String versionLabel;
+        private String calculationRule;
+        private String timeBoundary;
+        private String exclusions;
     }
 }

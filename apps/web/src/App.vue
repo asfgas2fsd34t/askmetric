@@ -29,21 +29,25 @@ import {
   TASK_BADGE_LABELS,
 } from "./analysis-context";
 import {
+  approveActionProposal,
   cancelAgentRun,
   createConversation,
+  createRevisionProposal,
+  discardActionProposal,
   createMessage,
   confirmUserMemory,
   createConversationSummary,
   deleteUserMemory,
   loadConversation,
   loadConversations,
+  loadAwaitingApprovalProposals,
   loadKnowledgeSources,
   loadUserMemories,
   proposeUserMemory,
   uploadKnowledgeSource,
+  rejectActionProposal,
   watchAgentRun,
   confirmActionProposal,
-  discardActionProposal,
   type ActionProposal,
   type AgentRunEvent,
   type ConversationSnapshot,
@@ -55,7 +59,9 @@ import {
 import { loadWorkspaceSession, type WorkspaceSession } from "./session";
 import {
   proposalActionTypeLabel,
+  proposalDecisionLine,
   proposalIsActionable,
+  proposalIsApprovable,
   proposalStatusBadgeClass,
   proposalStatusLabel,
 } from "./action-proposals";
@@ -228,6 +234,7 @@ async function refresh(requestedWorkspaceId?: string) {
     await refreshConversations(session.value.currentMembership.workspaceId);
     void refreshKnowledge(session.value.currentMembership.workspaceId);
     void refreshMemories(session.value.currentMembership.workspaceId);
+    void refreshApprovalQueue(session.value.currentMembership.workspaceId);
   } catch {
     error.value = "无法加载工作区";
   } finally {
@@ -247,6 +254,97 @@ async function refreshKnowledge(workspaceId: string) {
 
 const proposalBusy = ref(false);
 const proposalError = ref("");
+const approvalQueue = ref<ActionProposal[]>([]);
+const revisionDraft = ref({ metricKey: "mrr", versionLabel: "", calculationRule: "", timeBoundary: "", exclusions: "" });
+
+async function refreshApprovalQueue(workspaceId: string) {
+  if (!session.value) return;
+  try {
+    approvalQueue.value = await loadAwaitingApprovalProposals(await accessToken(), workspaceId);
+  } catch {
+    approvalQueue.value = [];
+  }
+}
+
+/** 有权限成员批准提案；不可逆终态，弹框复述确切参数。 */
+async function approveProposal(proposal: ActionProposal) {
+  if (!session.value || proposalBusy.value) return;
+  const confirmed = window.confirm(
+    `批准该提案？此操作不可逆。
+类型：${proposalActionTypeLabel(proposal.actionType)}`
+    + `
+计算规则：${proposal.calculationRule}
+时间边界：${proposal.timeBoundary}`
+    + `
+排除项：${proposal.exclusions}
+幂等键：${proposal.idempotencyKey}`);
+  if (!confirmed) return;
+  proposalBusy.value = true;
+  proposalError.value = "";
+  try {
+    await approveActionProposal(
+      await accessToken(), session.value.currentMembership.workspaceId, proposal.actionProposalId);
+    await refresh();
+    await refreshApprovalQueue(session.value.currentMembership.workspaceId);
+  } catch {
+    proposalError.value = "无法批准提案（权限、分离审批或策略版本守卫未通过）";
+  } finally {
+    proposalBusy.value = false;
+  }
+}
+
+/** 有权限成员拒绝提案；不可逆终态，不产生副作用。 */
+async function rejectProposal(proposal: ActionProposal) {
+  if (!session.value || proposalBusy.value) return;
+  if (!window.confirm(`拒绝该提案？此操作不可逆，提案不会执行。`)) return;
+  proposalBusy.value = true;
+  proposalError.value = "";
+  try {
+    await rejectActionProposal(
+      await accessToken(), session.value.currentMembership.workspaceId, proposal.actionProposalId);
+    await refresh();
+    await refreshApprovalQueue(session.value.currentMembership.workspaceId);
+  } catch {
+    proposalError.value = "无法拒绝提案";
+  } finally {
+    proposalBusy.value = false;
+  }
+}
+
+/** 有审批权限成员直建标准口径修订提案（ADR-0009 自上而下路径）。 */
+async function submitRevision() {
+  if (!session.value || proposalBusy.value) return;
+  const draft = revisionDraft.value;
+  if (!draft.versionLabel.trim() || !draft.calculationRule.trim()
+    || !draft.timeBoundary.trim() || !draft.exclusions.trim()) {
+    proposalError.value = "修订提案需要完整填写版本、规则、边界与排除项";
+    return;
+  }
+  if (!window.confirm(
+    `提交标准口径修订提案？
+${draft.metricKey} ${draft.versionLabel}`
+    + `
+计算规则：${draft.calculationRule}
+提交后进入审批队列，参数不可修改。`)) return;
+  proposalBusy.value = true;
+  proposalError.value = "";
+  try {
+    await createRevisionProposal(
+      await accessToken(), session.value.currentMembership.workspaceId, {
+        metricKey: draft.metricKey.trim(),
+        versionLabel: draft.versionLabel.trim(),
+        calculationRule: draft.calculationRule.trim(),
+        timeBoundary: draft.timeBoundary.trim(),
+        exclusions: draft.exclusions.trim(),
+      });
+    revisionDraft.value = { metricKey: draft.metricKey, versionLabel: "", calculationRule: "", timeBoundary: "", exclusions: "" };
+    await refreshApprovalQueue(session.value.currentMembership.workspaceId);
+  } catch {
+    proposalError.value = "无法创建修订提案";
+  } finally {
+    proposalBusy.value = false;
+  }
+}
 
 /** 发起者显式确认提案创建；确认弹框防止误操作，提案自此等待审批且参数不可变。 */
 async function confirmProposal(proposal: ActionProposal) {
@@ -904,8 +1002,69 @@ function closeInspectorOnEscape(event: KeyboardEvent) {
                 ✕
               </button>
             </footer>
-            <p v-else class="proposal-note">Agent 只能提出提案；执行需要人工审批（后续版本提供）。</p>
+            <footer v-else-if="proposalIsApprovable(proposal)" class="proposal-actions">
+              <button
+                class="proposal-approve"
+                type="button"
+                :disabled="proposalBusy"
+                @click="approveProposal(proposal)"
+              >
+                批准
+              </button>
+              <button
+                class="proposal-reject"
+                type="button"
+                :disabled="proposalBusy"
+                @click="rejectProposal(proposal)"
+              >
+                拒绝
+              </button>
+            </footer>
+            <p v-else-if="proposalDecisionLine(proposal)" class="proposal-decision">
+              {{ proposalDecisionLine(proposal) }}
+            </p>
+            <p v-else class="proposal-note">Agent 只能提出提案；批准与执行需要人工动作。</p>
           </article>
+        </section>
+
+        <section class="context-section" aria-labelledby="approval-heading">
+          <h3 id="approval-heading">审批队列</h3>
+          <details class="finding-details revision-form">
+            <summary>提议修订标准口径（治理成员）</summary>
+            <form class="memory-form revision-fields" @submit.prevent="submitRevision">
+              <input v-model="revisionDraft.metricKey" placeholder="指标键（如 mrr）" aria-label="指标键" :disabled="proposalBusy" />
+              <input v-model="revisionDraft.versionLabel" placeholder="版本（如 v4）" aria-label="版本" :disabled="proposalBusy" />
+              <input v-model="revisionDraft.calculationRule" placeholder="计算规则" aria-label="计算规则" :disabled="proposalBusy" />
+              <input v-model="revisionDraft.timeBoundary" placeholder="时间边界" aria-label="时间边界" :disabled="proposalBusy" />
+              <input v-model="revisionDraft.exclusions" placeholder="排除项" aria-label="排除项" :disabled="proposalBusy" />
+              <button class="memory-add" type="submit" :disabled="proposalBusy">提交提案</button>
+            </form>
+          </details>
+          <div v-if="approvalQueue.length === 0" class="context-empty">暂无等待审批的提案。</div>
+          <ul v-else class="memory-list">
+            <li v-for="proposal in approvalQueue" :key="proposal.actionProposalId" class="memory-item">
+              <div class="memory-item-main">
+                <p>{{ proposalActionTypeLabel(proposal.actionType) }} · {{ proposal.metricKey }} {{ proposal.versionLabel }}</p>
+                <small>发起者 {{ proposal.proposedBy }} · 策略版本 v{{ proposal.policyVersion }}</small>
+              </div>
+              <button
+                class="proposal-approve"
+                type="button"
+                :disabled="proposalBusy"
+                @click="approveProposal(proposal)"
+              >
+                批准
+              </button>
+              <button
+                class="proposal-reject"
+                type="button"
+                :disabled="proposalBusy"
+                @click="rejectProposal(proposal)"
+              >
+                拒绝
+              </button>
+            </li>
+          </ul>
         </section>
 
         <section class="context-section" aria-labelledby="memory-heading">
