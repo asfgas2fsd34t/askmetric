@@ -322,6 +322,115 @@ paths:
           description: 查询授权无效或过期
         "404":
           description: Agent Run 不存在
+  /api/v1/action-proposals:
+    post:
+      operationId: createRevisionProposal
+      summary: Create a standard-caliber revision proposal directly (governance member)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metricKey, versionLabel, calculationRule, timeBoundary, exclusions]
+              properties:
+                metricKey:
+                  type: string
+                  maxLength: 100
+                versionLabel:
+                  type: string
+                  maxLength: 100
+                calculationRule:
+                  type: string
+                  maxLength: 2000
+                timeBoundary:
+                  type: string
+                  maxLength: 2000
+                exclusions:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "201":
+          description: 修订提案已创建并等待审批
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 参数无效或成员无审批权限语义
+        "403":
+          description: 当前成员没有 APPROVE_ACTION_PROPOSAL 权限
+    get:
+      operationId: listAwaitingApprovalProposals
+      summary: List proposals awaiting approval in the workspace (approval queue)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 等待审批的提案
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActionProposal"
+        "403":
+          description: 当前成员没有 APPROVE_ACTION_PROPOSAL 权限
+  /api/v1/action-proposals/{actionProposalId}/approval:
+    post:
+      operationId: approveActionProposal
+      summary: Approve a proposal as a governance member
+      description: 不可逆终态；分离审批策略下发起者不能自批，策略版本过期的提案不可批准。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actionProposalId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 已批准，含决定人与时间
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 状态不可审批、策略版本过期或违反分离审批规则
+        "403":
+          description: 当前成员没有 APPROVE_ACTION_PROPOSAL 权限
+  /api/v1/action-proposals/{actionProposalId}/rejection:
+    post:
+      operationId: rejectActionProposal
+      summary: Reject a proposal as a governance member
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actionProposalId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: 已拒绝，含决定人与时间；不产生任何副作用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionProposal"
+        "400":
+          description: 状态不可审批、策略版本过期或违反分离审批规则
+        "403":
+          description: 当前成员没有 APPROVE_ACTION_PROPOSAL 权限
   /api/v1/agent-run-proposals:
     post:
       operationId: submitActionProposalForAgentRun
@@ -744,24 +853,25 @@ components:
             $ref: "#/components/schemas/ActionProposal"
     ActionProposal:
       type: object
-      required: [actionProposalId, workspaceId, conversationId, analysisTaskId, sourceAgentRunId, actionType, status, metricKey, versionLabel, calculationRule, timeBoundary, exclusions, policyVersion, idempotencyKey, proposedBy, createdAt]
+      required: [actionProposalId, workspaceId, actionType, status, metricKey, versionLabel, calculationRule, timeBoundary, exclusions, policyVersion, idempotencyKey, proposedBy, createdAt]
       properties:
         actionProposalId:
           type: string
         workspaceId:
           type: string
         conversationId:
-          type: string
+          type: [string, "null"]
+          description: 提案来源对话；成员直建时为空。
         analysisTaskId:
-          type: string
+          type: [string, "null"]
         sourceAgentRunId:
-          type: string
+          type: [string, "null"]
         actionType:
           type: string
           enum: [PROMOTE_CUSTOM_CALIBER, REVISE_STANDARD_CALIBER]
         status:
           type: string
-          enum: [AWAITING_CONFIRMATION, AWAITING_APPROVAL, SUPERSEDED, DISCARDED]
+          enum: [AWAITING_CONFIRMATION, AWAITING_APPROVAL, SUPERSEDED, DISCARDED, APPROVED, REJECTED]
         metricKey:
           type: string
         versionLabel:
@@ -782,7 +892,13 @@ components:
           type: string
           format: date-time
         supersededBy:
-          type: string
+          type: [string, "null"]
+        decidedBy:
+          type: [string, "null"]
+          description: 做出批准或拒绝决定的成员。
+        decidedAt:
+          type: [string, "null"]
+          format: date-time
         createdAt:
           type: string
           format: date-time

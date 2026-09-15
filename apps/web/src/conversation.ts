@@ -354,3 +354,77 @@ export async function deleteUserMemory(
     throw new Error("无法删除记忆");
   }
 }
+
+/** 有权限成员批准提案（不可逆终态）。 */
+export async function approveActionProposal(
+  token: string,
+  workspaceId: string,
+  actionProposalId: string,
+): Promise<ActionProposal> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/action-proposals/{actionProposalId}/approval",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { actionProposalId } },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法批准提案");
+  }
+  return data;
+}
+
+/** 有权限成员拒绝提案（不可逆终态）。 */
+export async function rejectActionProposal(
+  token: string,
+  workspaceId: string,
+  actionProposalId: string,
+): Promise<ActionProposal> {
+  const { data, error: fetchError, response } = await client().POST(
+    "/api/v1/action-proposals/{actionProposalId}/rejection",
+    {
+      headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+      params: { path: { actionProposalId } },
+    },
+  );
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法拒绝提案");
+  }
+  return data;
+}
+
+/** 审批队列：当前工作区等待审批的提案。 */
+export async function loadAwaitingApprovalProposals(
+  token: string,
+  workspaceId: string,
+): Promise<ActionProposal[]> {
+  const { data, error: fetchError, response } = await client().GET("/api/v1/action-proposals", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+  });
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法加载审批队列");
+  }
+  return data;
+}
+
+/** 有审批权限成员直接创建标准口径修订提案。 */
+export async function createRevisionProposal(
+  token: string,
+  workspaceId: string,
+  revision: {
+    metricKey: string;
+    versionLabel: string;
+    calculationRule: string;
+    timeBoundary: string;
+    exclusions: string;
+  },
+): Promise<ActionProposal> {
+  const { data, error: fetchError, response } = await client().POST("/api/v1/action-proposals", {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-Id": workspaceId },
+    body: revision,
+  });
+  if (fetchError || !data || response.status >= 400) {
+    throw new Error("无法创建修订提案");
+  }
+  return data;
+}

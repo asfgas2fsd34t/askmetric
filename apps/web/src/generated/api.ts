@@ -185,6 +185,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/action-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List proposals awaiting approval in the workspace (approval queue) */
+        get: operations["listAwaitingApprovalProposals"];
+        put?: never;
+        /** Create a standard-caliber revision proposal directly (governance member) */
+        post: operations["createRevisionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-proposals/{actionProposalId}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a proposal as a governance member
+         * @description 不可逆终态；分离审批策略下发起者不能自批，策略版本过期的提案不可批准。
+         */
+        post: operations["approveActionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-proposals/{actionProposalId}/rejection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a proposal as a governance member */
+        post: operations["rejectActionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-run-proposals": {
         parameters: {
             query?: never;
@@ -408,13 +463,14 @@ export interface components {
         ActionProposal: {
             actionProposalId: string;
             workspaceId: string;
-            conversationId: string;
-            analysisTaskId: string;
-            sourceAgentRunId: string;
+            /** @description 提案来源对话；成员直建时为空。 */
+            conversationId?: string | null;
+            analysisTaskId?: string | null;
+            sourceAgentRunId?: string | null;
             /** @enum {string} */
             actionType: "PROMOTE_CUSTOM_CALIBER" | "REVISE_STANDARD_CALIBER";
             /** @enum {string} */
-            status: "AWAITING_CONFIRMATION" | "AWAITING_APPROVAL" | "SUPERSEDED" | "DISCARDED";
+            status: "AWAITING_CONFIRMATION" | "AWAITING_APPROVAL" | "SUPERSEDED" | "DISCARDED" | "APPROVED" | "REJECTED";
             metricKey: string;
             versionLabel: string;
             calculationRule: string;
@@ -425,7 +481,11 @@ export interface components {
             proposedBy: string;
             /** Format: date-time */
             confirmedAt?: string;
-            supersededBy?: string;
+            supersededBy?: string | null;
+            /** @description 做出批准或拒绝决定的成员。 */
+            decidedBy?: string | null;
+            /** Format: date-time */
+            decidedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
         };
@@ -1041,6 +1101,157 @@ export interface operations {
             };
             /** @description Agent Run 不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAwaitingApprovalProposals: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 等待审批的提案 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"][];
+                };
+            };
+            /** @description 当前成员没有 APPROVE_ACTION_PROPOSAL 权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createRevisionProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    metricKey: string;
+                    versionLabel: string;
+                    calculationRule: string;
+                    timeBoundary: string;
+                    exclusions: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 修订提案已创建并等待审批 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 参数无效或成员无审批权限语义 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 当前成员没有 APPROVE_ACTION_PROPOSAL 权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    approveActionProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                actionProposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已批准，含决定人与时间 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 状态不可审批、策略版本过期或违反分离审批规则 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 当前成员没有 APPROVE_ACTION_PROPOSAL 权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rejectActionProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Workspace-Id"?: components["parameters"]["WorkspaceId"];
+            };
+            path: {
+                actionProposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已拒绝，含决定人与时间；不产生任何副作用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionProposal"];
+                };
+            };
+            /** @description 状态不可审批、策略版本过期或违反分离审批规则 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 当前成员没有 APPROVE_ACTION_PROPOSAL 权限 */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

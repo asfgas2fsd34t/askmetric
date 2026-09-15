@@ -25,5 +25,7 @@ public class ActionProposal {
     private String proposedBy;
     private Instant confirmedAt;
     private String supersededBy;
+    private Instant decidedAt;
+    private String decidedBy;
     private Instant createdAt;
 }

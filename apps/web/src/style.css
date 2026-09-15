@@ -1511,3 +1511,54 @@ textarea {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+.proposal-approve {
+  padding: 5px 14px;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 0;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.proposal-approve:disabled,
+.proposal-reject:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.proposal-reject {
+  padding: 5px 14px;
+  color: var(--red);
+  background: transparent;
+  border: 1px solid var(--red-line-strong);
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.proposal-approved {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.proposal-rejected {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.proposal-decision {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.revision-form summary {
+  cursor: pointer;
+}
+
+.revision-fields {
+  grid-template-columns: 1fr;
+  margin-top: 8px;
+}

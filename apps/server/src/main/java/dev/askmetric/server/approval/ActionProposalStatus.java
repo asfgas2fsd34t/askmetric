@@ -9,5 +9,9 @@ public enum ActionProposalStatus {
     /** 同一分析任务出现了新提案；本提案参数保持原样、不再可审批。 */
     SUPERSEDED,
     /** 发起者放弃了该提案；不会产生任何副作用。 */
-    DISCARDED
+    DISCARDED,
+    /** 有权限成员批准；不可逆终态，执行阶段（T24）据此且仅据此生效一次。 */
+    APPROVED,
+    /** 有权限成员拒绝；不可逆终态，不会产生任何副作用。 */
+    REJECTED
 }

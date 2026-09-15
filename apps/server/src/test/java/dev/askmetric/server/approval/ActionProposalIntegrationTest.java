@@ -66,8 +66,26 @@ class ActionProposalIntegrationTest {
                     insert into workspace_membership (membership_id, workspace_id, user_subject, permissions)
                     values ('membership-proposal-carol', 'workspace-demo',
                             '00000000-0000-0000-0000-000000000003',
-                            ARRAY['VIEW_WORKSPACE', 'CREATE_AGENT_RUN', 'VIEW_AGENT_RUN'])
+                            ARRAY['VIEW_WORKSPACE', 'VIEW_AGENT_RUN', 'CREATE_MESSAGE'])
                     on conflict (membership_id) do nothing
+                    """);
+        }
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void restoreDemoPolicy() throws Exception {
+        updatePolicyAsOwner("""
+                update workspace_policy
+                set policy_version = 1, requires_separate_approver = false
+                where workspace_id = 'workspace-demo'
+                """);
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            connection.createStatement().execute("""
+                    update workspace_membership
+                    set permissions = ARRAY['VIEW_WORKSPACE', 'VIEW_AGENT_RUN', 'CREATE_MESSAGE']
+                    where workspace_id = 'workspace-demo'
+                      and user_subject = '00000000-0000-0000-0000-000000000003'
                     """);
         }
     }
@@ -260,6 +278,201 @@ class ActionProposalIntegrationTest {
     }
 
     /** 走完整业务链路得到一个绑定自定义口径的下钻运行：建任务→自定义口径→下钻消息。 */
+
+    @Test
+    void governanceMemberApprovesConfirmedProposalWithDecisionDetails() throws Exception {
+        String conversationId = createConversation("审批通过");
+        String runId = prepareCustomCaliberDrilldownRun(conversationId, "只统计月末有效订阅");
+        String proposalId = submitProposal(runId);
+        postConfirm(proposalId);
+
+        // demo 策略宽松：发起者可以自批（confirm-to-record）。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.decidedBy").value(ALICE))
+                .andExpect(jsonPath("$.decidedAt").isNotEmpty())
+                .andExpect(jsonPath("$.calculationRule", org.hamcrest.Matchers.containsString("月末有效订阅")));
+
+        // 终态不可逆：重复批准与事后拒绝都被状态守卫拒绝。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", org.hamcrest.Matchers.containsString("不可审批")));
+        mvc.perform(post("/api/v1/action-proposals/{id}/rejection", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void strictPolicyBlocksSelfApprovalAndAllowsAnotherApprover() throws Exception {
+        // 将 demo 策略升级为 v2 并要求分离审批；提案在 v2 之后创建才不过期。
+        updatePolicyAsOwner("""
+                update workspace_policy
+                set policy_version = 2, requires_separate_approver = true
+                where workspace_id = 'workspace-demo'
+                """);
+        grantApprovePermission(CAROL);
+
+        String conversationId = createConversation("分离审批");
+        String runId = prepareCustomCaliberDrilldownRun(conversationId, "只统计月末有效订阅");
+        String proposalId = submitProposal(runId);
+        postConfirm(proposalId);
+
+        // 发起者自批被拒。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", org.hamcrest.Matchers.containsString("分离审批")));
+
+        // 队列对 CAROL 可见；另一名有权限成员批准成功。
+        mvc.perform(get("/api/v1/action-proposals")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(CAROL))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.actionProposalId == '%s')]", proposalId).exists());
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(CAROL))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.decidedBy").value(CAROL));
+    }
+
+    @Test
+    void stalePolicyVersionProposalsCannotBeApproved() throws Exception {
+        String conversationId = createConversation("策略过期");
+        String runId = prepareCustomCaliberDrilldownRun(conversationId, "只统计月末有效订阅");
+        String proposalId = submitProposal(runId);
+        postConfirm(proposalId);
+
+        // 提案基于 v1 创建；策略升级到 v2 后提案过期。
+        updatePolicyAsOwner("""
+                update workspace_policy set policy_version = policy_version + 1
+                where workspace_id = 'workspace-demo'
+                """);
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", org.hamcrest.Matchers.containsString("过期")));
+    }
+
+    @Test
+    void memberCreatesRevisionProposalsDirectlyWithIdempotentReplay() throws Exception {
+        String first = createRevision("v4", "累计订阅事件，排除一次性费用");
+        mvc.perform(get("/api/v1/action-proposals")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.actionProposalId == '%s')].status", first).value("AWAITING_APPROVAL"));
+
+        // 相同参数重放首提案。
+        assertThat(createRevision("v4", "累计订阅事件，排除一次性费用")).isEqualTo(first);
+
+        // 参数变化即新提案，旧提案被取代且不可再审批。
+        String second = createRevision("v4", "累计订阅事件，排除一次性费用与税费");
+        assertThat(second).isNotEqualTo(first);
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", first)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest());
+
+        // 宽松策略下治理成员可自批自己的修订提案（confirm-to-record）。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", second)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.metricKey").value("mrr"))
+                .andExpect(jsonPath("$.versionLabel").value("v4"));
+    }
+
+    @Test
+    void membersWithoutApprovalPermissionCannotDecide() throws Exception {
+        String conversationId = createConversation("权限守卫");
+        String runId = prepareCustomCaliberDrilldownRun(conversationId, "只统计月末有效订阅");
+        String proposalId = submitProposal(runId);
+        postConfirm(proposalId);
+
+        // CAROL 没有审批权限：端点授权直接拒绝。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(CAROL))))
+                .andExpect(status().isForbidden());
+    }
+
+
+    @Test
+    void governanceMemberRejectsAProposalIntoIrreversibleTerminalState() throws Exception {
+        String conversationId = createConversation("拒绝路径");
+        String runId = prepareCustomCaliberDrilldownRun(conversationId, "只统计月末有效订阅");
+        String proposalId = submitProposal(runId);
+        postConfirm(proposalId);
+
+        mvc.perform(post("/api/v1/action-proposals/{id}/rejection", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.decidedBy").value(ALICE))
+                .andExpect(jsonPath("$.decidedAt").isNotEmpty())
+                .andExpect(jsonPath("$.calculationRule", org.hamcrest.Matchers.containsString("月末有效订阅")));
+
+        // 拒绝后不可再批准，也不会被重新审批。
+        mvc.perform(post("/api/v1/action-proposals/{id}/approval", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isBadRequest());
+    }
+
+    private String createRevision(String versionLabel, String rule) throws Exception {
+        String body = """
+                {"metricKey":"mrr","versionLabel":"%s",
+                 "calculationRule":"%s","timeBoundary":"自然月末","exclusions":"一次性费用"}
+                """.formatted(versionLabel, rule);
+        String response = mvc.perform(post("/api/v1/action-proposals")
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(body)
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("actionProposalId").asText();
+    }
+
+
+    private void updatePolicyAsOwner(String sql) throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            connection.createStatement().execute(sql);
+        }
+    }
+
+    private void grantApprovePermission(String userSubject) throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            connection.createStatement().execute("""
+                    update workspace_membership
+                    set permissions = permissions || ARRAY['APPROVE_ACTION_PROPOSAL']
+                    where workspace_id = 'workspace-demo' and user_subject = '%s'
+                    """.formatted(userSubject));
+        }
+    }
+
+    private void postConfirm(String proposalId) throws Exception {
+        mvc.perform(post("/api/v1/action-proposals/{id}/confirmation", proposalId)
+                        .header("X-Workspace-Id", "workspace-demo")
+                        .with(jwt().jwt(token -> token.subject(ALICE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"));
+    }
+
     private String prepareCustomCaliberDrilldownRun(String conversationId, String customRule) throws Exception {
         postMessage(conversationId, "为什么本月 MRR 下降？");
         postMessage(conversationId, "使用自定义口径：" + customRule);
